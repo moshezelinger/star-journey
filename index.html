@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Little Star Journey</title>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700&family=Nunito:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body {
+    width:100%; height:100%; overflow:hidden;
+    background:#05060f; color:#eef3ff;
+    font-family:'Nunito', system-ui, sans-serif;
+    touch-action:none; overscroll-behavior:none;
+    user-select:none; -webkit-user-select:none;
+  }
+  canvas { display:block; position:fixed; inset:0; }
+
+  .screen {
+    position:fixed; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:18px;
+    text-align:center; padding:24px;
+    background:radial-gradient(circle at 50% 45%, rgba(60,40,110,.55), rgba(5,6,15,.92) 70%);
+    z-index:20;
+  }
+  .screen.hidden { display:none; }
+
+  h1 {
+    font-family:'Baloo 2', cursive; font-size:clamp(38px, 11vw, 76px);
+    font-weight:700; letter-spacing:.5px; line-height:1;
+    background:linear-gradient(180deg,#fff9e0,#ffd36e 55%,#ff9ad5);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 22px rgba(255,190,120,.45));
+  }
+  h2 { font-family:'Baloo 2', cursive; font-size:clamp(26px,7vw,44px); color:#fff3c9; }
+  .tagline { font-size:clamp(14px,4vw,18px); color:#b9c3e6; letter-spacing:.4px; }
+
+  button.pill {
+    font-family:'Baloo 2', cursive; font-size:20px; font-weight:700;
+    padding:13px 44px; border:none; border-radius:999px; cursor:pointer;
+    color:#2b1a45; background:linear-gradient(180deg,#ffe9a8,#ffc04d);
+    box-shadow:0 6px 0 #c4802a, 0 10px 24px rgba(0,0,0,.45);
+    transition:transform .08s ease, box-shadow .08s ease;
+  }
+  button.pill:active { transform:translateY(4px); box-shadow:0 2px 0 #c4802a, 0 6px 14px rgba(0,0,0,.4); }
+  button.ghost {
+    font-family:'Nunito', sans-serif; font-size:15px; font-weight:700;
+    padding:10px 26px; border-radius:999px; cursor:pointer;
+    color:#dfe6ff; background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.22);
+  }
+  button.ghost:active { background:rgba(255,255,255,.18); }
+  .row { display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
+
+  /* HUD */
+  #hud { position:fixed; inset:0; z-index:10; pointer-events:none; display:none; }
+  #hud.on { display:block; }
+  #shards {
+    position:absolute; top:calc(14px + env(safe-area-inset-top)); left:16px;
+    font-family:'Baloo 2', cursive; font-size:22px; color:#fff2c0;
+    text-shadow:0 2px 10px rgba(0,0,0,.8);
+  }
+  #planetName {
+    position:absolute; top:calc(16px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+    font-size:13px; letter-spacing:3px; text-transform:uppercase; color:#a9b6e0;
+    text-shadow:0 2px 8px rgba(0,0,0,.8);
+  }
+  #hudSound {
+    position:absolute; top:calc(10px + env(safe-area-inset-top)); right:14px;
+    pointer-events:auto; font-size:20px; padding:6px 12px; border-radius:14px;
+    background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.2); cursor:pointer;
+  }
+  #hint {
+    position:absolute; bottom:24%; left:50%; transform:translateX(-50%);
+    font-size:15px; color:#e7edff; background:rgba(12,10,28,.55);
+    padding:10px 18px; border-radius:14px; backdrop-filter:blur(6px);
+    opacity:0; transition:opacity .5s ease; white-space:pre-line; line-height:1.6;
+  }
+  #hint.show { opacity:1; }
+  #toast {
+    position:absolute; top:22%; left:50%; transform:translateX(-50%);
+    font-family:'Baloo 2', cursive; font-size:clamp(20px,6vw,30px); color:#ffe9a0;
+    text-shadow:0 0 18px rgba(255,190,90,.6); opacity:0; transition:opacity .4s ease;
+  }
+  #toast.show { opacity:1; }
+
+  /* Touch controls */
+  #stickBase {
+    position:absolute; width:120px; height:120px; border-radius:50%;
+    border:2px solid rgba(255,255,255,.25); background:rgba(255,255,255,.06);
+    transform:translate(-50%,-50%); display:none;
+  }
+  #stickKnob {
+    position:absolute; width:54px; height:54px; border-radius:50%;
+    background:rgba(255,255,255,.55); transform:translate(-50%,-50%); display:none;
+  }
+  #jumpBtn {
+    position:absolute; right:26px; bottom:calc(36px + env(safe-area-inset-bottom));
+    width:96px; height:96px; border-radius:50%; pointer-events:auto;
+    background:radial-gradient(circle at 35% 30%, rgba(255,255,255,.35), rgba(255,205,120,.28));
+    border:2px solid rgba(255,230,170,.55);
+    font-family:'Baloo 2', cursive; font-size:19px; color:#fff6dd;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #jumpBtn.pressed { transform:scale(.93); background:rgba(255,225,160,.45); }
+  body.desktop #jumpBtn { display:none; }
+
+  #rotate {
+    position:fixed; inset:0; z-index:40; display:none;
+    align-items:center; justify-content:center; background:#05060f;
+    font-size:18px; color:#cfd8ff; text-align:center; padding:30px;
+  }
+  #legend { font-size:13px; color:#8e9ac4; line-height:1.8; }
+  .medal { font-size:52px; filter:drop-shadow(0 0 20px rgba(255,200,90,.6)); }
+</style>
+</head>
+<body>
+
+<div id="rotate">Rotate your phone for the best experience.</div>
+
+<!-- Menu -->
+<div class="screen" id="menu">
+  <h1>Little Star Journey</h1>
+  <p class="tagline">Collect the lost starlight.</p>
+  <button class="pill" id="playBtn">Play</button>
+  <div class="row">
+    <button class="ghost" id="soundBtn">Sound: On</button>
+  </div>
+  <p id="legend">Move with the left stick, jump with the button.<br>On a keyboard: WASD or arrows, Space to jump, drag to look.</p>
+</div>
+
+<!-- Victory -->
+<div class="screen hidden" id="victory">
+  <div class="medal">🌟</div>
+  <h2>You found the lost starlight!</h2>
+  <p class="tagline">Thanks for playing</p>
+  <p id="timeText" class="tagline"></p>
+  <div class="row">
+    <button class="pill" id="againBtn">Play Again</button>
+    <button class="ghost" id="menuBtn">Main Menu</button>
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="planetName">Meadow Planet</div>
+  <div id="shards">⭐ 0 / 5</div>
+  <button id="hudSound">🔊</button>
+  <div id="hint"></div>
+  <div id="toast"></div>
+  <div id="stickBase"></div>
+  <div id="stickKnob"></div>
+  <div id="jumpBtn">Jump</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+"use strict";
+
+/* ============================================================
+   Little Star Journey - original mini platformer with spherical
+   gravity. Everything is procedural: no external assets.
+   ============================================================ */
+
+// ---------- small utilities ----------
+function rng(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function randomDir(rand) {
+  const u = rand() * 2 - 1;
+  const a = rand() * Math.PI * 2;
+  const s = Math.sqrt(1 - u * u);
+  return new THREE.Vector3(s * Math.cos(a), u, s * Math.sin(a));
+}
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// ---------- audio ----------
+const Audio = {
+  ctx: null, master: null, musicGain: null, on: true,
+  nextNote: 0, step: 0, root: 220,
+  init() {
+    if (this.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    this.ctx = new AC();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = this.on ? 0.9 : 0;
+    this.master.connect(this.ctx.destination);
+    this.musicGain = this.ctx.createGain();
+    this.musicGain.gain.value = 0.16;
+    this.musicGain.connect(this.master);
+    this.nextNote = this.ctx.currentTime + 0.2;
+  },
+  resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); },
+  setOn(v) {
+    this.on = v;
+    if (this.master) this.master.gain.setTargetAtTime(v ? 0.9 : 0, this.ctx.currentTime, 0.05);
+  },
+  tone(freq, dur, type, vol, sweepTo) {
+    if (!this.ctx || !this.on) return;
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = type || "sine";
+    o.frequency.setValueAtTime(freq, t);
+    if (sweepTo) o.frequency.exponentialRampToValueAtTime(sweepTo, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol || 0.2, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(this.master);
+    o.start(t); o.stop(t + dur + 0.05);
+  },
+  noise(dur, vol) {
+    if (!this.ctx || !this.on) return;
+    const t = this.ctx.currentTime;
+    const len = Math.floor(this.ctx.sampleRate * dur);
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = this.ctx.createBufferSource(); src.buffer = buf;
+    const f = this.ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 700;
+    const g = this.ctx.createGain(); g.gain.value = vol || 0.18;
+    src.connect(f); f.connect(g); g.connect(this.master);
+    src.start(t);
+  },
+  jump() { this.tone(340, 0.22, "sine", 0.18, 720); },
+  land() { this.noise(0.16, 0.16); },
+  collect() { this.tone(880, 0.14, "triangle", 0.16); setTimeout(() => this.tone(1320, 0.22, "triangle", 0.13), 70); },
+  spring() { this.tone(260, 0.3, "sine", 0.2, 1000); },
+  launch() { this.tone(200, 0.7, "sawtooth", 0.12, 900); },
+  click() { this.tone(600, 0.07, "square", 0.09); },
+  gate() { this.tone(520, 0.5, "triangle", 0.14, 780); },
+  victory() {
+    const notes = [523, 659, 784, 1047, 1319];
+    notes.forEach((n, i) => setTimeout(() => this.tone(n, 0.6, "triangle", 0.2), i * 130));
+  },
+  setKey(root) { this.root = root; },
+  // gentle pentatonic arpeggio, scheduled from the render loop
+  update() {
+    if (!this.ctx || !this.on) return;
+    const t = this.ctx.currentTime;
+    while (this.nextNote < t + 0.3) {
+      const scale = [0, 2, 4, 7, 9, 12, 9, 7];
+      const semis = scale[this.step % scale.length];
+      const f = this.root * Math.pow(2, semis / 12);
+      const when = this.nextNote;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(f, when);
+      g.gain.setValueAtTime(0.0001, when);
+      g.gain.exponentialRampToValueAtTime(0.25, when + 0.08);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + 0.9);
+      o.connect(g); g.connect(this.musicGain);
+      o.start(when); o.stop(when + 1.0);
+      if (this.step % 8 === 0) {
+        const p = this.ctx.createOscillator();
+        const pg = this.ctx.createGain();
+        p.type = "sine";
+        p.frequency.setValueAtTime(this.root / 2, when);
+        pg.gain.setValueAtTime(0.0001, when);
+        pg.gain.exponentialRampToValueAtTime(0.3, when + 0.4);
+        pg.gain.exponentialRampToValueAtTime(0.0001, when + 3.2);
+        p.connect(pg); pg.connect(this.musicGain);
+        p.start(when); p.stop(when + 3.4);
+      }
+      this.step++;
+      this.nextNote += 0.62;
+    }
+  }
+};
+
+// ---------- three.js setup ----------
+let scene, camera, renderer;
+const clock = new THREE.Clock();
+
+scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05060f);
+
+camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 2000);
+
+renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xbcd8ff, 0x231b3a, 0.85));
+const sun = new THREE.DirectionalLight(0xfff1d0, 1.05);
+sun.position.set(60, 90, 40);
+scene.add(sun);
+const rim = new THREE.DirectionalLight(0x8f7dff, 0.5);
+rim.position.set(-70, -30, -60);
+scene.add(rim);
+
+// starfield
+(function makeStars() {
+  const g = new THREE.BufferGeometry();
+  const n = 1400, pos = new Float32Array(n * 3);
+  const rand = rng(7);
+  for (let i = 0; i < n; i++) {
+    const d = randomDir(rand).multiplyScalar(420 + rand() * 400);
+    pos[i * 3] = d.x; pos[i * 3 + 1] = d.y; pos[i * 3 + 2] = d.z;
+  }
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0.9 });
+  const stars = new THREE.Points(g, m);
+  stars.frustumCulled = false;
+  scene.add(stars);
+})();
+
+// ---------- shared materials ----------
+const MAT = {
+  shard: new THREE.MeshStandardMaterial({ color: 0xffe27a, emissive: 0xffb020, emissiveIntensity: 1.2, roughness: 0.3 }),
+  halo: new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }),
+  gate: new THREE.MeshStandardMaterial({ color: 0x9fe8ff, emissive: 0x38c6ff, emissiveIntensity: 1.4, roughness: 0.25 }),
+  grand: new THREE.MeshStandardMaterial({ color: 0xfff0b0, emissive: 0xffc040, emissiveIntensity: 1.6, roughness: 0.2 }),
+  spring: new THREE.MeshStandardMaterial({ color: 0xd7a6ff, emissive: 0x8b3cff, emissiveIntensity: 0.9, roughness: 0.3 })
+};
+
+function mat(color, opts) {
+  return new THREE.MeshStandardMaterial(Object.assign({ color: color, roughness: 0.85, metalness: 0.0, flatShading: true }, opts || {}));
+}
+
+// ---------- planets ----------
+const PLANET_DEFS = [
+  {
+    name: "Meadow Planet", center: new THREE.Vector3(0, 0, 0), radius: 9, gravity: 24,
+    ground: 0x5fbf6a, low: 0x3f8f57, key: 220, theme: "meadow", spawnDir: new THREE.Vector3(0, 1, 0.2)
+  },
+  {
+    name: "Crystal Planet", center: new THREE.Vector3(74, 16, -46), radius: 8, gravity: 24,
+    ground: 0x5f6fd0, low: 0x3a3f8a, key: 262, theme: "crystal", spawnDir: new THREE.Vector3(-0.3, 1, 0.3)
+  },
+  {
+    name: "Tiny Moon", center: new THREE.Vector3(6, 52, -122), radius: 6, gravity: 13,
+    ground: 0x9fb4c8, low: 0x6a7c92, key: 196, theme: "moon", spawnDir: new THREE.Vector3(0.2, 1, 0.4)
+  },
+  {
+    name: "Star Garden", center: new THREE.Vector3(84, 6, -196), radius: 10, gravity: 22,
+    ground: 0xd873c8, low: 0x8b3fa8, key: 294, theme: "garden", spawnDir: new THREE.Vector3(0, -0.9, 0.5)
+  }
+];
+
+const planets = [];
+
+function buildPlanet(def, index) {
+  const group = new THREE.Group();
+  group.position.copy(def.center);
+  scene.add(group);
+
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(def.radius, 4), mat(def.ground, { roughness: 0.95 }));
+  group.add(body);
+
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(def.radius * 1.14, 20, 16),
+    new THREE.MeshBasicMaterial({ color: def.ground, transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide })
+  );
+  group.add(glow);
+
+  const p = {
+    def: def, name: def.name, center: def.center.clone(), radius: def.radius,
+    gravity: def.gravity, group: group, shards: [], springs: [], spinners: [],
+    gate: null, exitDir: null, collected: 0, total: 0
+  };
+
+  const rand = rng(1000 + index * 77);
+  const place = (obj, dir, h) => {
+    obj.position.copy(dir).multiplyScalar(def.radius + h);
+    obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    group.add(obj);
+  };
+
+  // ---- decorations per theme ----
+  if (def.theme === "meadow") {
+    const trunkM = mat(0x8a5a3b), leafM = mat(0x37a05a), rockM = mat(0x8d8f96);
+    const petalM = mat(0xffd7e8, { emissive: 0xff8fc4, emissiveIntensity: 0.25 });
+    for (let i = 0; i < 9; i++) {
+      const t = new THREE.Group();
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 1.1, 6), trunkM);
+      trunk.position.y = 0.55; t.add(trunk);
+      const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(0.62, 0), leafM);
+      leaf.position.y = 1.35; t.add(leaf);
+      place(t, randomDir(rand), 0);
+    }
+    for (let i = 0; i < 22; i++) {
+      const f = new THREE.Group();
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.34, 4), leafM);
+      stem.position.y = 0.17; f.add(stem);
+      const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 0), petalM);
+      head.position.y = 0.4; f.add(head);
+      place(f, randomDir(rand), 0);
+    }
+    for (let i = 0; i < 8; i++) {
+      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 + rand() * 0.35, 0), rockM);
+      place(r, randomDir(rand), 0.1);
+    }
+  }
+
+  if (def.theme === "crystal") {
+    const crystM = mat(0x8fd8ff, { emissive: 0x2f7fd0, emissiveIntensity: 0.55, roughness: 0.35 });
+    const rockM = mat(0x4a4f88);
+    for (let i = 0; i < 16; i++) {
+      const c = new THREE.Mesh(new THREE.ConeGeometry(0.28 + rand() * 0.2, 1.0 + rand() * 1.1, 5), crystM);
+      c.position.y = 0.6;
+      const holder = new THREE.Group(); holder.add(c);
+      place(holder, randomDir(rand), 0);
+    }
+    for (let i = 0; i < 8; i++) {
+      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35 + rand() * 0.4, 0), rockM);
+      place(r, randomDir(rand), 0.1);
+    }
+    // spring pads
+    for (let i = 0; i < 5; i++) {
+      const dir = randomDir(rand);
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.9, 0.28, 8), MAT.spring);
+      pad.position.y = 0.14;
+      const holder = new THREE.Group(); holder.add(pad);
+      place(holder, dir, 0);
+      p.springs.push({ dir: dir.clone(), mesh: pad, holder: holder });
+    }
+  }
+
+  if (def.theme === "moon") {
+    const rockM = mat(0x7e8ea3), craterM = mat(0x60707f);
+    for (let i = 0; i < 14; i++) {
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.5 + rand() * 0.5, 0.6 + rand() * 0.5, 0.16, 8), craterM);
+      place(c, randomDir(rand), -0.04);
+    }
+    for (let i = 0; i < 7; i++) {
+      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 + rand() * 0.3, 0), rockM);
+      place(r, randomDir(rand), 0.1);
+    }
+    // slow orbiting rocks (decorative)
+    for (let i = 0; i < 6; i++) {
+      const axis = randomDir(rand);
+      const start = randomDir(rand).cross(axis).normalize();
+      const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28 + rand() * 0.22, 0), rockM);
+      group.add(m);
+      p.spinners.push({ mesh: m, axis: axis, base: start, dist: def.radius + 2.2 + rand() * 2.4, speed: 0.25 + rand() * 0.35, phase: rand() * 6.28 });
+    }
+  }
+
+  if (def.theme === "garden") {
+    const stemM = mat(0x8a4bb0);
+    const petalM = mat(0xffc4f2, { emissive: 0xff5fd0, emissiveIntensity: 0.55 });
+    const ringM = mat(0xa9d6ff, { emissive: 0x4aa0ff, emissiveIntensity: 0.7 });
+    for (let i = 0; i < 20; i++) {
+      const f = new THREE.Group();
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.6, 4), stemM);
+      stem.position.y = 0.3; f.add(stem);
+      const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.24, 0), petalM);
+      head.position.y = 0.72; f.add(head);
+      place(f, randomDir(rand), 0);
+    }
+    for (let i = 0; i < 6; i++) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.1 + rand() * 0.6, 0.07, 6, 24), ringM);
+      const h = new THREE.Group();
+      ring.rotation.x = Math.PI / 2; ring.position.y = 1.4;
+      h.add(ring); place(h, randomDir(rand), 0);
+    }
+  }
+
+  // ---- star shards ----
+  const shardCount = 5;
+  const used = [];
+  for (let i = 0; i < shardCount; i++) {
+    let dir;
+    let guard = 0;
+    do { dir = randomDir(rand); guard++; }
+    while (guard < 40 && used.some(d => d.dot(dir) > 0.72));
+    used.push(dir.clone());
+
+    const holder = new THREE.Group();
+    const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.34, 0), MAT.shard);
+    s.position.y = 1.0;
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.75, 12, 10), MAT.halo);
+    halo.position.y = 1.0;
+    holder.add(s); holder.add(halo);
+    place(holder, dir, 0);
+    p.shards.push({ holder: holder, spin: s, dir: dir.clone(), taken: false });
+  }
+  p.total = shardCount;
+
+  // ---- exit gate (all planets except the last) ----
+  if (index < PLANET_DEFS.length - 1) {
+    const exitDir = randomDir(rand);
+    p.exitDir = exitDir.clone();
+    const holder = new THREE.Group();
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.16, 8, 28), MAT.gate);
+    ring.position.y = 1.7; ring.rotation.x = Math.PI / 2;
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.9, 14, 12),
+      new THREE.MeshBasicMaterial({ color: 0x8ef0ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }));
+    core.position.y = 1.7;
+    holder.add(ring); holder.add(core);
+    place(holder, exitDir, 0);
+    holder.visible = false;
+    p.gate = { holder: holder, ring: ring, dir: exitDir.clone() };
+  }
+
+  // ---- grand star on the last planet ----
+  if (index === PLANET_DEFS.length - 1) {
+    const dir = new THREE.Vector3(0, 1, 0);
+    const holder = new THREE.Group();
+    const star = new THREE.Mesh(new THREE.OctahedronGeometry(1.05, 0), MAT.grand);
+    star.position.y = 2.2;
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(2.1, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false }));
+    halo.position.y = 2.2;
+    holder.add(star); holder.add(halo);
+    place(holder, dir, 0);
+    holder.visible = false;
+    p.grand = { holder: holder, star: star, dir: dir.clone(), taken: false };
+  }
+
+  planets.push(p);
+  return p;
+}
+PLANET_DEFS.forEach(buildPlanet);
+
+// ---------- particles ----------
+const Particles = {
+  pool: [],
+  spawn(pos, color, count, speed) {
+    const n = count || 18;
+    const g = new THREE.BufferGeometry();
+    const arr = new Float32Array(n * 3);
+    const vel = [];
+    const rand = Math.random;
+    for (let i = 0; i < n; i++) {
+      arr[i * 3] = pos.x; arr[i * 3 + 1] = pos.y; arr[i * 3 + 2] = pos.z;
+      const d = new THREE.Vector3(rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1).normalize();
+      vel.push(d.multiplyScalar((speed || 3) * (0.4 + rand())));
+    }
+    g.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+    const m = new THREE.PointsMaterial({ color: color, size: 0.28, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false });
+    const pts = new THREE.Points(g, m);
+    pts.frustumCulled = false;
+    scene.add(pts);
+    this.pool.push({ pts: pts, vel: vel, life: 0, max: 0.9 });
+  },
+  update(dt) {
+    for (let i = this.pool.length - 1; i >= 0; i--) {
+      const b = this.pool[i];
+      b.life += dt;
+      const a = b.pts.geometry.attributes.position;
+      for (let j = 0; j < b.vel.length; j++) {
+        a.array[j * 3] += b.vel[j].x * dt;
+        a.array[j * 3 + 1] += b.vel[j].y * dt;
+        a.array[j * 3 + 2] += b.vel[j].z * dt;
+        b.vel[j].multiplyScalar(0.94);
+      }
+      a.needsUpdate = true;
+      b.pts.material.opacity = Math.max(0, 1 - b.life / b.max);
+      if (b.life >= b.max) {
+        scene.remove(b.pts);
+        b.pts.geometry.dispose(); b.pts.material.dispose();
+        this.pool.splice(i, 1);
+      }
+    }
+  },
+  clear() {
+    this.pool.forEach(b => { scene.remove(b.pts); b.pts.geometry.dispose(); b.pts.material.dispose(); });
+    this.pool.length = 0;
+  }
+};
+
+// ---------- player ----------
+const player = new THREE.Group();
+const playerRig = new THREE.Group(); // holds the loaded Mario model, corrected for facing/scale
+player.add(playerRig);
+player.userData.ready = false;
+player.userData.bones = {};
+player.userData.restRot = {};
+
+(function loadPlayerModel() {
+  const loader = new THREE.GLTFLoader();
+  loader.load(
+    "mario_movie_super_mario_movie.glb",
+    (gltf) => {
+      const model = gltf.scene;
+
+      // Box3 on a SkinnedMesh only measures raw bind-attribute data (ignores the
+      // actual skin pose), which is wildly wrong for this rig - it reported a
+      // ~2.3 height that, once rendered, actually stood ~4 units tall. Measure the
+      // true surface instead with a raycast straight through the character.
+      model.scale.set(1, 1, 1);
+      model.position.set(0, 0, 0);
+      model.updateMatrixWorld(true);
+      const rc = new THREE.Raycaster();
+      rc.far = 1e6;
+      rc.set(new THREE.Vector3(0, 5e5, 0), new THREE.Vector3(0, -1, 0));
+      const topHit = rc.intersectObject(model, true)[0];
+
+      // The feet stand apart in the bind pose, so a single centerline ray
+      // upward misses both shoes and instead hits the overalls hem - that
+      // point sits well above the true sole, which made Mario's feet sink
+      // visibly into the ground. Sweep a grid instead and keep the lowest hit.
+      let minY = Infinity;
+      for (let x = -3; x <= 3.001; x += 0.15) {
+        for (let z = -3; z <= 3.001; z += 0.15) {
+          rc.set(new THREE.Vector3(x, -5e5, z), new THREE.Vector3(0, 1, 0));
+          const hit = rc.intersectObject(model, true)[0];
+          if (hit && hit.point.y < minY) minY = hit.point.y;
+        }
+      }
+
+      const targetHeight = 1.55;
+      let scale = 1;
+      let footY = 0;
+      if (topHit && isFinite(minY)) {
+        const rawHeight = topHit.point.y - minY;
+        scale = rawHeight > 0 ? targetHeight / rawHeight : 1;
+        footY = minY;
+      }
+      model.scale.setScalar(scale);
+      model.position.y = -footY * scale;
+
+      playerRig.add(model);
+
+      const bones = {};
+      model.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+      player.userData.bones = bones;
+
+      // the rig loads in a T-pose; drop the arms to a relaxed idle stance.
+      // Verified by measuring hand displacement per axis: for this rig, a
+      // shoulder's local Y swings the arm in the vertical plane (down/up) and
+      // local X swings it forward/back - Z is a near no-op here. Left/right
+      // shoulders are mirrored, hence the opposite signs below.
+      // Note: 1.5 rad (near-vertical) tucks the short arms entirely inside
+      // Mario's round torso from the front - invisible, looked "frozen".
+      // 1.05 rad keeps the gloves clear of the body at every swing angle.
+      if (bones.ShoulderL_017) bones.ShoulderL_017.rotation.y += 1.05;
+      if (bones.ShoulderR_025) bones.ShoulderR_025.rotation.y -= 1.05;
+
+      Object.keys(bones).forEach((k) => { player.userData.restRot[k] = bones[k].rotation.clone(); });
+      player.userData.ready = true;
+    },
+    undefined,
+    (err) => { console.error("Mario model failed to load:", err); }
+  );
+})();
+scene.add(player);
+
+const P = {
+  pos: new THREE.Vector3(),
+  vel: new THREE.Vector3(),
+  up: new THREE.Vector3(0, 1, 0),
+  face: new THREE.Vector3(0, 0, 1),
+  grounded: false,
+  speed: 6.4,
+  jump: 11.5,
+  walkPhase: 0
+};
+
+// camera state
+let camDir = new THREE.Vector3(0, 0, 1);   // direction the camera looks, tangent to surface
+let camDist = 8.5, camHeight = 3.4, camUp = new THREE.Vector3(0, 1, 0);
+let yawInput = 0;
+
+// ---------- game state ----------
+const S = { MENU: "MENU", PLAYING: "PLAYING", TRANSITION: "PLANET_TRANSITION", VICTORY: "VICTORY" };
+let state = S.MENU;
+let activeIndex = 0;
+let active = planets[0];
+let startTime = 0, finishTime = 0;
+let transition = null;
+let menuAngle = 0;
+
+// ---------- UI ----------
+const ui = {
+  menu: document.getElementById("menu"),
+  victory: document.getElementById("victory"),
+  hud: document.getElementById("hud"),
+  shards: document.getElementById("shards"),
+  planetName: document.getElementById("planetName"),
+  hint: document.getElementById("hint"),
+  toast: document.getElementById("toast"),
+  soundBtn: document.getElementById("soundBtn"),
+  hudSound: document.getElementById("hudSound"),
+  timeText: document.getElementById("timeText"),
+  rotate: document.getElementById("rotate"),
+  jumpBtn: document.getElementById("jumpBtn"),
+  stickBase: document.getElementById("stickBase"),
+  stickKnob: document.getElementById("stickKnob")
+};
+
+let toastTimer = null;
+function toast(msg, ms) {
+  ui.toast.textContent = msg;
+  ui.toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => ui.toast.classList.remove("show"), ms || 2200);
+}
+let hintTimer = null;
+function hint(msg, ms) {
+  ui.hint.textContent = msg;
+  ui.hint.classList.add("show");
+  clearTimeout(hintTimer);
+  if (ms) hintTimer = setTimeout(() => ui.hint.classList.remove("show"), ms);
+}
+function updateHud() {
+  ui.shards.textContent = "⭐ " + active.collected + " / " + active.total;
+  ui.planetName.textContent = active.name;
+}
+function updateSoundLabels() {
+  ui.soundBtn.textContent = "Sound: " + (Audio.on ? "On" : "Off");
+  ui.hudSound.textContent = Audio.on ? "🔊" : "🔇";
+}
+
+// ---------- input ----------
+const keys = {};
+window.addEventListener("keydown", e => {
+  keys[e.code] = true;
+  if (e.code === "Space") { e.preventDefault(); if (!e.repeat) jumpQueued = true; }
+});
+window.addEventListener("keyup", e => { keys[e.code] = false; });
+
+const stick = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
+const look = { id: null, lastX: 0 };
+let jumpQueued = false;
+let jumpHeld = false;
+const isTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
+if (!isTouch) document.body.classList.add("desktop");
+
+function stickStart(id, x, y) {
+  stick.active = true; stick.id = id; stick.ox = x; stick.oy = y; stick.x = 0; stick.y = 0;
+  ui.stickBase.style.display = "block"; ui.stickKnob.style.display = "block";
+  ui.stickBase.style.left = x + "px"; ui.stickBase.style.top = y + "px";
+  ui.stickKnob.style.left = x + "px"; ui.stickKnob.style.top = y + "px";
+}
+function stickMove(x, y) {
+  const dx = x - stick.ox, dy = y - stick.oy;
+  const len = Math.hypot(dx, dy), max = 50;
+  const k = len > max ? max / len : 1;
+  ui.stickKnob.style.left = (stick.ox + dx * k) + "px";
+  ui.stickKnob.style.top = (stick.oy + dy * k) + "px";
+  stick.x = clamp(dx / max, -1, 1);
+  stick.y = clamp(-dy / max, -1, 1);
+}
+function stickEnd() {
+  stick.active = false; stick.id = null; stick.x = 0; stick.y = 0;
+  ui.stickBase.style.display = "none"; ui.stickKnob.style.display = "none";
+}
+
+document.addEventListener("touchstart", e => {
+  if (state !== S.PLAYING && state !== S.TRANSITION) return;
+  for (const t of e.changedTouches) {
+    if (t.target === ui.hudSound) return;
+    const inJump = t.target === ui.jumpBtn;
+    if (inJump) { jumpQueued = true; jumpHeld = true; ui.jumpBtn.classList.add("pressed"); Audio.resume(); continue; }
+    if (t.clientX < window.innerWidth * 0.5 && !stick.active) { stickStart(t.identifier, t.clientX, t.clientY); }
+    else if (look.id === null) { look.id = t.identifier; look.lastX = t.clientX; }
+  }
+  e.preventDefault();
+}, { passive: false });
+
+document.addEventListener("touchmove", e => {
+  for (const t of e.changedTouches) {
+    if (stick.active && t.identifier === stick.id) stickMove(t.clientX, t.clientY);
+    else if (t.identifier === look.id) { yawInput += (t.clientX - look.lastX) * 0.006; look.lastX = t.clientX; }
+  }
+  e.preventDefault();
+}, { passive: false });
+
+function touchClear(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === stick.id) stickEnd();
+    if (t.identifier === look.id) look.id = null;
+    if (t.target === ui.jumpBtn) { jumpHeld = false; ui.jumpBtn.classList.remove("pressed"); }
+  }
+}
+document.addEventListener("touchend", touchClear);
+document.addEventListener("touchcancel", touchClear);
+
+// mouse look for desktop
+let mouseDown = false, mouseLastX = 0;
+renderer.domElement.addEventListener("mousedown", e => { mouseDown = true; mouseLastX = e.clientX; });
+window.addEventListener("mouseup", () => { mouseDown = false; });
+window.addEventListener("mousemove", e => {
+  if (!mouseDown) return;
+  yawInput += (e.clientX - mouseLastX) * 0.006;
+  mouseLastX = e.clientX;
+});
+
+// ---------- helpers ----------
+function surfaceUp(pos, planet) {
+  return new THREE.Vector3().subVectors(pos, planet.center).normalize();
+}
+function nearestPlanet(pos) {
+  let best = planets[0], bestD = Infinity;
+  for (const p of planets) {
+    const d = pos.distanceTo(p.center) - p.radius;
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+function projectTangent(v, up) {
+  const out = v.clone().addScaledVector(up, -v.dot(up));
+  if (out.lengthSq() < 1e-6) {
+    const alt = Math.abs(up.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    out.copy(alt.addScaledVector(up, -alt.dot(up)));
+  }
+  return out.normalize();
+}
+function orientPlayer(up, forward, t) {
+  const f = projectTangent(forward, up);
+  const bx = new THREE.Vector3().crossVectors(up, f).normalize();
+  const m = new THREE.Matrix4().makeBasis(bx, up, f);
+  const q = new THREE.Quaternion().setFromRotationMatrix(m);
+  player.quaternion.slerp(q, t);
+}
+
+// ---------- game flow ----------
+function landOnPlanet(index, dirOverride) {
+  activeIndex = index;
+  active = planets[index];
+  const dir = (dirOverride || active.def.spawnDir).clone().normalize();
+  P.pos.copy(active.center).addScaledVector(dir, active.radius);
+  P.vel.set(0, 0, 0);
+  P.up.copy(dir);
+  P.grounded = true;
+  camDir.copy(projectTangent(new THREE.Vector3(0, 0, 1), P.up));
+  camUp.copy(P.up);
+  player.position.copy(P.pos);
+  orientPlayer(P.up, camDir, 1);
+  Audio.setKey(active.def.key);
+  updateHud();
+  if (active.grand) active.grand.holder.visible = true;
+}
+
+function resetGame() {
+  Particles.clear();
+  planets.forEach(p => {
+    p.collected = 0;
+    p.shards.forEach(s => { s.taken = false; s.holder.visible = true; });
+    if (p.gate) p.gate.holder.visible = false;
+    if (p.grand) { p.grand.taken = false; p.grand.holder.visible = false; }
+  });
+  transition = null;
+  landOnPlanet(0);
+  startTime = performance.now();
+}
+
+function startGame() {
+  Audio.init();
+  Audio.resume();
+  resetGame();
+  state = S.PLAYING;
+  ui.menu.classList.add("hidden");
+  ui.victory.classList.add("hidden");
+  ui.hud.classList.add("on");
+  hint("Move with the stick.\nTap Jump to hop.\nCollect 5 Star Shards.", 7000);
+}
+
+function goToMenu() {
+  state = S.MENU;
+  ui.menu.classList.remove("hidden");
+  ui.victory.classList.add("hidden");
+  ui.hud.classList.remove("on");
+  stickEnd();
+}
+
+function startTransition(nextIndex) {
+  state = S.TRANSITION;
+  stickEnd();
+  Audio.launch();
+  Particles.spawn(P.pos, 0x9fe8ff, 30, 5);
+  const target = planets[nextIndex];
+  const endDir = target.def.spawnDir.clone().normalize();
+  const endPos = target.center.clone().addScaledVector(endDir, target.radius);
+  const mid = P.pos.clone().add(endPos).multiplyScalar(0.5);
+  const away = mid.clone().sub(active.center).normalize().multiplyScalar(26);
+  transition = {
+    t: 0, dur: 2.6,
+    a: P.pos.clone(),
+    b: mid.add(away),
+    c: endPos,
+    next: nextIndex,
+    endDir: endDir
+  };
+  hint("Launching to " + target.name, 2600);
+}
+
+function collectShard(s) {
+  s.taken = true;
+  s.holder.visible = false;
+  active.collected++;
+  Audio.collect();
+  const wp = new THREE.Vector3();
+  s.holder.getWorldPosition(wp);
+  wp.addScaledVector(s.dir, 1.0);
+  Particles.spawn(wp, 0xffd76a, 16, 3.2);
+  updateHud();
+  if (active.collected >= active.total) {
+    if (active.gate) {
+      active.gate.holder.visible = true;
+      Audio.gate();
+      toast("A gate of light opened!");
+      hint("Find the glowing ring and step inside.", 5000);
+    } else if (active.grand) {
+      toast("The Grand Star awaits.");
+    }
+  }
+}
+
+// ---------- main loop ----------
+function updatePlaying(dt) {
+  // camera yaw from input
+  if (Math.abs(yawInput) > 0) {
+    camDir.applyAxisAngle(P.up, -yawInput);
+    yawInput = 0;
+  }
+
+  const planet = nearestPlanet(P.pos);
+  if (planet !== active && state === S.PLAYING) {
+    active = planet;
+    activeIndex = planets.indexOf(planet);
+    Audio.setKey(active.def.key);
+    updateHud();
+  }
+
+  const up = surfaceUp(P.pos, active);
+  P.up.copy(up);
+  camDir.copy(projectTangent(camDir, up));
+  const right = new THREE.Vector3().crossVectors(camDir, up).normalize();
+
+  // input direction
+  let ix = stick.x, iy = stick.y;
+  if (keys["KeyW"] || keys["ArrowUp"]) iy += 1;
+  if (keys["KeyS"] || keys["ArrowDown"]) iy -= 1;
+  if (keys["KeyD"] || keys["ArrowRight"]) ix += 1;
+  if (keys["KeyA"] || keys["ArrowLeft"]) ix -= 1;
+  const inLen = Math.hypot(ix, iy);
+  if (inLen > 1) { ix /= inLen; iy /= inLen; }
+  const moveDir = new THREE.Vector3().addScaledVector(camDir, iy).addScaledVector(right, ix);
+  const moving = moveDir.lengthSq() > 0.001;
+  if (moving) moveDir.normalize();
+
+  // split velocity
+  const vRad = up.clone().multiplyScalar(P.vel.dot(up));
+  const vTan = P.vel.clone().sub(vRad);
+  const desired = moveDir.clone().multiplyScalar(moving ? P.speed * Math.min(1, inLen || 1) : 0);
+  vTan.lerp(desired, P.grounded ? 0.28 : 0.06);
+
+  // jump
+  if (jumpQueued && P.grounded) {
+    vRad.copy(up).multiplyScalar(P.jump * (0.75 + 0.25 * active.gravity / 24));
+    P.grounded = false;
+    Audio.jump();
+  }
+  jumpQueued = false;
+
+  // gravity + integrate
+  vRad.addScaledVector(up, -active.gravity * dt);
+  P.vel.copy(vTan).add(vRad);
+  P.pos.addScaledVector(P.vel, dt);
+
+  // ground clamp
+  const distToCenter = P.pos.distanceTo(active.center);
+  if (distToCenter <= active.radius) {
+    const newUp = surfaceUp(P.pos, active);
+    P.pos.copy(active.center).addScaledVector(newUp, active.radius);
+    const inward = P.vel.dot(newUp);
+    if (inward < 0) P.vel.addScaledVector(newUp, -inward);
+    if (!P.grounded) {
+      Audio.land();
+      Particles.spawn(P.pos.clone().addScaledVector(newUp, 0.2), 0xffffff, 8, 1.6);
+    }
+    P.grounded = true;
+    P.up.copy(newUp);
+
+    // spring pads
+    for (const sp of active.springs) {
+      const padPos = active.center.clone().addScaledVector(sp.dir, active.radius);
+      if (P.pos.distanceTo(padPos) < 1.1) {
+        P.vel.addScaledVector(newUp, P.jump * 1.9);
+        P.grounded = false;
+        Audio.spring();
+        Particles.spawn(padPos.clone().addScaledVector(newUp, 0.4), 0xd7a6ff, 14, 3);
+        break;
+      }
+    }
+  } else if (distToCenter > active.radius + 0.12) {
+    P.grounded = false;
+  }
+
+  player.position.copy(P.pos);
+  orientPlayer(P.up, moving ? moveDir : (P.face.lengthSq() ? P.face : camDir), moving ? 0.22 : 0.12);
+  if (moving) P.face.copy(moveDir);
+
+  // walk animation
+  //
+  // Axis note: this rig's hip/knee/shoulder bones were assumed to swing on
+  // local X (like a typical forward-hinge). Measured empirically (rotating
+  // each axis and tracking the resulting hand/foot displacement in world
+  // space), that assumption was wrong: X is a near-zero-effect twist axis for
+  // the legs, so the previous version rotated a dead axis and nothing moved.
+  // The real mapping for this model:
+  //   - hips (LegL_03 / LegR_06):    Z swings forward/back
+  //   - knees (KneeL_04 / KneeR_07): Z bends (mirrored sign L vs R)
+  //   - feet (FootL_05 / FootR_08):  Z flexes the ankle (same sign L and R)
+  //   - shoulders (ShoulderL/R):     Y swings vertically (down/up), X swings forward/back
+  // Left/right bones are mirror images of each other, so the same signed
+  // offset produces opposite world-space motion on each side - the formulas
+  // below look identical for L/R on purpose; that's what makes them alternate.
+  const speedNow = new THREE.Vector3().copy(P.vel).sub(up.clone().multiplyScalar(P.vel.dot(up))).length();
+  const moveFactor = clamp(speedNow / P.speed, 0, 1);
+  // cadence is derived from a fixed stride length, so steps/sec stays realistic at any speed
+  const STRIDE_LENGTH = 2.6;
+  P.walkPhase += dt * (Math.PI * 2 * speedNow / STRIDE_LENGTH);
+  if (player.userData.ready) {
+    const b = player.userData.bones;
+    const rest = player.userData.restRot;
+    const t = P.walkPhase;
+
+    const legAmp = moveFactor * 0.7;
+    const armAmp = moveFactor * 0.7;
+    const kneeAmp = moveFactor * 1.1;
+
+    const legSwing = Math.sin(t) * legAmp;
+    // knee bends only through the forward half of that leg's own swing, straight on push-off;
+    // squaring the clamped cosine eases in/out instead of snapping at the zero-crossing
+    const kneeRaw = Math.cos(t);
+    const kneeL = (kneeRaw > 0 ? kneeRaw * kneeRaw : 0) * kneeAmp;
+    const kneeR = (kneeRaw < 0 ? kneeRaw * kneeRaw : 0) * kneeAmp;
+    const armSwing = Math.sin(t) * armAmp; // same-side arm crosses opposite the leg automatically (mirrored rig)
+    // elbows: a fully straight arm reads as stiff/robotic even at rest, so keep a
+    // relaxed baseline bend and add a touch more at each swing extreme. Verified
+    // (same per-axis displacement test as the legs/shoulders): elbow local Z is
+    // the flex axis here, mirrored in sign between the left and right arm.
+    const elbowBend = 0.35 + Math.abs(Math.sin(t)) * 0.3 * moveFactor;
+    const bob = -Math.abs(Math.sin(t)) * 0.02 * moveFactor; // kept tiny - no IK, so feet don't track a bigger bounce
+    const idleBreathe = moveFactor < 0.05 ? Math.sin(clock.elapsedTime * 1.8) * 0.02 : 0;
+
+    if (b.LegL_03) b.LegL_03.rotation.z = rest.LegL_03.z - legSwing;
+    if (b.LegR_06) b.LegR_06.rotation.z = rest.LegR_06.z - legSwing;
+    if (b.KneeL_04) b.KneeL_04.rotation.z = rest.KneeL_04.z + kneeL;
+    if (b.KneeR_07) b.KneeR_07.rotation.z = rest.KneeR_07.z - kneeR;
+    if (b.FootL_05) b.FootL_05.rotation.z = rest.FootL_05.z - kneeL * 0.4;
+    if (b.FootR_08) b.FootR_08.rotation.z = rest.FootR_08.z - kneeR * 0.4;
+    if (b.ShoulderL_017) b.ShoulderL_017.rotation.x = rest.ShoulderL_017.x + armSwing;
+    if (b.ShoulderR_025) b.ShoulderR_025.rotation.x = rest.ShoulderR_025.x + armSwing;
+    if (b.ElbowL_019) b.ElbowL_019.rotation.z = rest.ElbowL_019.z - elbowBend;
+    if (b.ElbowR_027) b.ElbowR_027.rotation.z = rest.ElbowR_027.z + elbowBend;
+    if (b.Spine1_09) b.Spine1_09.rotation.x = rest.Spine1_09.x + idleBreathe;
+    playerRig.position.y = bob;
+
+    if (!P.grounded) {
+      const air = 0.9;
+      const raise = 0.6; // partially undo the idle hang so arms come up when airborne
+      // arms keep moving the whole time in the air instead of snapping into a
+      // fixed pose - an alternating "windmill" flap driven by wall-clock time
+      // (not walkPhase, which stalls once P.speed stops advancing it) so it
+      // keeps animating even on a straight-up jump with no horizontal speed.
+      const flapT = clock.elapsedTime * 9;
+      const flapL = Math.sin(flapT) * 0.4;
+      const flapR = Math.sin(flapT + Math.PI) * 0.4;
+      if (b.KneeL_04) b.KneeL_04.rotation.z = rest.KneeL_04.z + air;
+      if (b.KneeR_07) b.KneeR_07.rotation.z = rest.KneeR_07.z - air;
+      if (b.ShoulderL_017) { b.ShoulderL_017.rotation.x = rest.ShoulderL_017.x + flapL; b.ShoulderL_017.rotation.y = rest.ShoulderL_017.y - raise; }
+      if (b.ShoulderR_025) { b.ShoulderR_025.rotation.x = rest.ShoulderR_025.x + flapR; b.ShoulderR_025.rotation.y = rest.ShoulderR_025.y + raise; }
+      if (b.ElbowL_019) b.ElbowL_019.rotation.z = rest.ElbowL_019.z - 0.6;
+      if (b.ElbowR_027) b.ElbowR_027.rotation.z = rest.ElbowR_027.z + 0.6;
+      playerRig.position.y = 0.04;
+    }
+  }
+
+  // collectibles
+  for (const s of active.shards) {
+    if (s.taken) continue;
+    const wp = new THREE.Vector3();
+    s.holder.getWorldPosition(wp);
+    wp.addScaledVector(s.dir, 1.0);
+    if (P.pos.distanceTo(wp) < 1.35) collectShard(s);
+  }
+
+  // gate
+  if (active.gate && active.gate.holder.visible) {
+    const wp = active.center.clone().addScaledVector(active.gate.dir, active.radius + 1.7);
+    if (P.pos.distanceTo(wp) < 1.9) startTransition(activeIndex + 1);
+  }
+
+  // grand star
+  if (active.grand && active.grand.holder.visible && !active.grand.taken && active.collected >= active.total) {
+    const wp = active.center.clone().addScaledVector(active.grand.dir, active.radius + 2.2);
+    if (P.pos.distanceTo(wp) < 2.4) {
+      active.grand.taken = true;
+      active.grand.holder.visible = false;
+      Audio.victory();
+      Particles.spawn(wp, 0xffe08a, 60, 7);
+      Particles.spawn(wp, 0xffffff, 40, 4);
+      finishTime = performance.now() - startTime;
+      state = S.VICTORY;
+      setTimeout(() => {
+        const secs = Math.round(finishTime / 1000);
+        ui.timeText.textContent = "Journey time: " + Math.floor(secs / 60) + "m " + (secs % 60) + "s";
+        ui.victory.classList.remove("hidden");
+        ui.hud.classList.remove("on");
+      }, 1500);
+    }
+  }
+}
+
+function updateCameraFollow(dt, extra) {
+  const up = P.up;
+  camUp.lerp(up, Math.min(1, dt * 6)).normalize();
+  const dist = camDist + (extra || 0);
+  const want = P.pos.clone()
+    .addScaledVector(camDir, -dist)
+    .addScaledVector(up, camHeight);
+  // keep the camera outside the planet
+  const dc = want.distanceTo(active.center);
+  if (dc < active.radius + 1.6) {
+    want.copy(active.center).addScaledVector(want.clone().sub(active.center).normalize(), active.radius + 1.6);
+  }
+  camera.position.lerp(want, Math.min(1, dt * 5.5));
+  camera.up.copy(camUp);
+  camera.lookAt(P.pos.clone().addScaledVector(up, 1.0));
+}
+
+function updateTransition(dt) {
+  const tr = transition;
+  tr.t += dt;
+  const k = clamp(tr.t / tr.dur, 0, 1);
+  const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+  const one = 1 - e;
+  const pos = new THREE.Vector3()
+    .addScaledVector(tr.a, one * one)
+    .addScaledVector(tr.b, 2 * one * e)
+    .addScaledVector(tr.c, e * e);
+  const prev = P.pos.clone();
+  P.pos.copy(pos);
+  player.position.copy(pos);
+
+  const dir = pos.clone().sub(prev);
+  if (dir.lengthSq() > 1e-6) {
+    dir.normalize();
+    const targetUp = new THREE.Vector3().lerpVectors(P.up, tr.endDir, e).normalize();
+    orientPlayer(targetUp, dir, 0.15);
+    P.up.copy(targetUp);
+    camUp.lerp(targetUp, Math.min(1, dt * 3)).normalize();
+    const camWant = pos.clone().addScaledVector(dir, -11).addScaledVector(camUp, 3.5);
+    camera.position.lerp(camWant, Math.min(1, dt * 4));
+    camera.up.copy(camUp);
+    camera.lookAt(pos);
+  }
+
+  if (k >= 1) {
+    transition = null;
+    landOnPlanet(tr.next, tr.endDir);
+    state = S.PLAYING;
+    toast("Welcome to " + active.name);
+    if (active.springs.length) hint("The purple pads bounce you high.", 5000);
+    if (active.grand) hint("Collect 5 shards, then reach the Grand Star.", 6000);
+    Particles.spawn(P.pos, 0xffffff, 24, 4);
+  }
+}
+
+function updateMenuCamera(dt) {
+  menuAngle += dt * 0.16;
+  const p = planets[0];
+  const r = p.radius + 12;
+  camera.position.set(
+    p.center.x + Math.cos(menuAngle) * r,
+    p.center.y + 6,
+    p.center.z + Math.sin(menuAngle) * r
+  );
+  camera.up.set(0, 1, 0);
+  camera.lookAt(p.center);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  // ambient spin for shards, gates, spinners
+  for (const p of planets) {
+    for (const s of p.shards) if (s.holder.visible) {
+      s.spin.rotation.y += dt * 1.8;
+      s.spin.position.y = 1.0 + Math.sin(t * 2 + s.dir.x * 5) * 0.12;
+    }
+    if (p.gate && p.gate.holder.visible) p.gate.ring.rotation.z += dt * 1.1;
+    if (p.grand && p.grand.holder.visible) {
+      p.grand.star.rotation.y += dt * 0.9;
+      p.grand.star.position.y = 2.2 + Math.sin(t * 1.5) * 0.18;
+    }
+    for (const sp of p.spinners) {
+      const ang = t * sp.speed + sp.phase;
+      const v = sp.base.clone().applyAxisAngle(sp.axis, ang).multiplyScalar(sp.dist);
+      sp.mesh.position.copy(v);
+      sp.mesh.rotation.x += dt * 0.4; sp.mesh.rotation.y += dt * 0.3;
+    }
+  }
+
+  if (state === S.MENU) updateMenuCamera(dt);
+  else if (state === S.PLAYING) { updatePlaying(dt); updateCameraFollow(dt, P.grounded ? 0 : 1.2); }
+  else if (state === S.TRANSITION) updateTransition(dt);
+  else if (state === S.VICTORY) updateCameraFollow(dt, 9);
+
+  Particles.update(dt);
+  Audio.update();
+  renderer.render(scene, camera);
+}
+
+// ---------- buttons ----------
+document.getElementById("playBtn").addEventListener("click", () => { Audio.init(); Audio.click(); startGame(); });
+document.getElementById("againBtn").addEventListener("click", () => { Audio.click(); startGame(); });
+document.getElementById("menuBtn").addEventListener("click", () => { Audio.click(); goToMenu(); });
+ui.soundBtn.addEventListener("click", () => { Audio.init(); Audio.setOn(!Audio.on); updateSoundLabels(); Audio.click(); });
+ui.hudSound.addEventListener("click", e => { e.stopPropagation(); Audio.setOn(!Audio.on); updateSoundLabels(); });
+updateSoundLabels();
+
+// ---------- resize / orientation ----------
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  const portraitPhone = isTouch && window.innerHeight > window.innerWidth && window.innerWidth < 520;
+  ui.rotate.style.display = portraitPhone && state === S.PLAYING ? "flex" : "none";
+}
+window.addEventListener("resize", onResize);
+window.addEventListener("orientationchange", () => setTimeout(onResize, 200));
+onResize();
+
+// place the player somewhere sensible so the menu scene looks alive
+landOnPlanet(0);
+state = S.MENU;
+animate();
+</script>
+</body>
+</html>
