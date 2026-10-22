@@ -1,0 +1,11 @@
+Model Information:
+* title:	Bowser Super Mario Bros.1
+* source:	https://sketchfab.com/3d-models/bowser-super-mario-bros1-d02c1fa828364677b890ea8b2d408b97
+* author:	Vandacvi (https://sketchfab.com/Vandacvi)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Bowser Super Mario Bros.1" (https://sketchfab.com/3d-models/bowser-super-mario-bros1-d02c1fa828364677b890ea8b2d408b97) by Vandacvi (https://sketchfab.com/Vandacvi) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

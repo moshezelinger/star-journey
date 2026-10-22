@@ -60,6 +60,13 @@
     font-family:'Baloo 2', cursive; font-size:22px; color:#fff2c0;
     text-shadow:0 2px 10px rgba(0,0,0,.8);
   }
+  #shards.boss { color:#ff9b7a; }
+  #hearts {
+    position:absolute; top:calc(48px + env(safe-area-inset-top)); left:16px;
+    font-size:22px; letter-spacing:2px; text-shadow:0 2px 10px rgba(0,0,0,.8);
+    display:none;
+  }
+  #hearts.on { display:block; }
   #planetName {
     position:absolute; top:calc(16px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
     font-size:13px; letter-spacing:3px; text-transform:uppercase; color:#a9b6e0;
@@ -112,6 +119,8 @@
   }
   #legend { font-size:13px; color:#8e9ac4; line-height:1.8; }
   .medal { font-size:52px; filter:drop-shadow(0 0 20px rgba(255,200,90,.6)); }
+  #credits { font-size:11px; color:#6f7aa3; max-width:520px; line-height:1.5; }
+  #credits a { color:#8e9ac4; }
 </style>
 </head>
 <body>
@@ -127,12 +136,13 @@
     <button class="ghost" id="soundBtn">Sound: On</button>
   </div>
   <p id="legend">Move with the left stick, jump with the button.<br>On a keyboard: WASD or arrows, Space to jump, drag to look.</p>
+  <p id="credits">Bowser model: "<a href="https://sketchfab.com/3d-models/bowser-super-mario-bros1-d02c1fa828364677b890ea8b2d408b97" target="_blank" rel="noopener">Bowser Super Mario Bros.1</a>" by <a href="https://sketchfab.com/Vandacvi" target="_blank" rel="noopener">Vandacvi</a>, CC-BY-4.0.</p>
 </div>
 
 <!-- Victory -->
 <div class="screen hidden" id="victory">
   <div class="medal">🌟</div>
-  <h2>You found the lost starlight!</h2>
+  <h2>Bowser is beaten - you found the lost starlight!</h2>
   <p class="tagline">Thanks for playing</p>
   <p id="timeText" class="tagline"></p>
   <div class="row">
@@ -145,6 +155,7 @@
 <div id="hud">
   <div id="planetName">Meadow Planet</div>
   <div id="shards">⭐ 0 / 5</div>
+  <div id="hearts"></div>
   <button id="hudSound">🔊</button>
   <div id="hint"></div>
   <div id="toast"></div>
@@ -236,6 +247,11 @@ const Audio = {
   launch() { this.tone(200, 0.7, "sawtooth", 0.12, 900); },
   click() { this.tone(600, 0.07, "square", 0.09); },
   gate() { this.tone(520, 0.5, "triangle", 0.14, 780); },
+  hurt() { this.tone(420, 0.35, "square", 0.12, 140); },
+  roar() { this.tone(110, 1.1, "sawtooth", 0.16, 55); this.noise(0.9, 0.22); },
+  fire() { this.noise(0.35, 0.2); this.tone(180, 0.3, "sawtooth", 0.08, 90); },
+  boom() { this.noise(0.6, 0.32); this.tone(70, 0.5, "sine", 0.3, 35); },
+  bossHit() { this.tone(700, 0.12, "square", 0.12); setTimeout(() => this.tone(240, 0.4, "sawtooth", 0.14, 90), 90); },
   victory() {
     const notes = [523, 659, 784, 1047, 1319];
     notes.forEach((n, i) => setTimeout(() => this.tone(n, 0.6, "triangle", 0.2), i * 130));
@@ -283,7 +299,11 @@ const clock = new THREE.Clock();
 scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05060f);
 
-camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 2000);
+// Planets (and the distances between them) are scaled by this factor; Mario,
+// props and collectibles keep their original size.
+const WORLD_SCALE = 10;
+
+camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 15000);
 
 renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -298,13 +318,14 @@ const rim = new THREE.DirectionalLight(0x8f7dff, 0.5);
 rim.position.set(-70, -30, -60);
 scene.add(rim);
 
-// starfield
+// starfield - a sky shell that follows the camera, far outside every planet
+let starfield = null;
 (function makeStars() {
   const g = new THREE.BufferGeometry();
   const n = 1400, pos = new Float32Array(n * 3);
   const rand = rng(7);
   for (let i = 0; i < n; i++) {
-    const d = randomDir(rand).multiplyScalar(420 + rand() * 400);
+    const d = randomDir(rand).multiplyScalar(9000 + rand() * 3000);
     pos[i * 3] = d.x; pos[i * 3 + 1] = d.y; pos[i * 3 + 2] = d.z;
   }
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
@@ -312,6 +333,7 @@ scene.add(rim);
   const stars = new THREE.Points(g, m);
   stars.frustumCulled = false;
   scene.add(stars);
+  starfield = stars;
 })();
 
 // ---------- shared materials ----------
@@ -330,93 +352,174 @@ function mat(color, opts) {
 // ---------- planets ----------
 const PLANET_DEFS = [
   {
-    name: "Meadow Planet", center: new THREE.Vector3(0, 0, 0), radius: 9, gravity: 24,
+    name: "Meadow Planet", center: new THREE.Vector3(0, 0, 0), radius: 9 * WORLD_SCALE, gravity: 24,
     ground: 0x5fbf6a, low: 0x3f8f57, key: 220, theme: "meadow", spawnDir: new THREE.Vector3(0, 1, 0.2)
   },
   {
-    name: "Crystal Planet", center: new THREE.Vector3(74, 16, -46), radius: 8, gravity: 24,
+    name: "Crystal Planet", center: new THREE.Vector3(74, 16, -46).multiplyScalar(WORLD_SCALE), radius: 8 * WORLD_SCALE, gravity: 24,
     ground: 0x5f6fd0, low: 0x3a3f8a, key: 262, theme: "crystal", spawnDir: new THREE.Vector3(-0.3, 1, 0.3)
   },
   {
-    name: "Tiny Moon", center: new THREE.Vector3(6, 52, -122), radius: 6, gravity: 13,
+    name: "Tiny Moon", center: new THREE.Vector3(6, 52, -122).multiplyScalar(WORLD_SCALE), radius: 6 * WORLD_SCALE, gravity: 13,
     ground: 0x9fb4c8, low: 0x6a7c92, key: 196, theme: "moon", spawnDir: new THREE.Vector3(0.2, 1, 0.4)
   },
   {
-    name: "Star Garden", center: new THREE.Vector3(84, 6, -196), radius: 10, gravity: 22,
-    ground: 0xd873c8, low: 0x8b3fa8, key: 294, theme: "garden", spawnDir: new THREE.Vector3(0, -0.9, 0.5)
+    name: "Bowser's Star Garden", center: new THREE.Vector3(84, 6, -196).multiplyScalar(WORLD_SCALE), radius: 10 * WORLD_SCALE, gravity: 22,
+    ground: 0xd873c8, low: 0x8b3fa8, key: 147, theme: "garden", spawnDir: new THREE.Vector3(0.45, 0.8, 0.4), boss: true
   }
 ];
 
 const planets = [];
+const UP_Y = new THREE.Vector3(0, 1, 0);
+
+// random unit vector whose angle from `axis` lies in [minAng, maxAng] (radians)
+function randomDirInCap(rand, axis, minAng, maxAng) {
+  const a = axis.clone().normalize();
+  const t1 = projectTangent(new THREE.Vector3(0.31, 0.77, 0.56), a);
+  const t2 = new THREE.Vector3().crossVectors(a, t1);
+  const cosMin = Math.cos(minAng), cosMax = Math.cos(maxAng);
+  const c = cosMax + rand() * (cosMin - cosMax);
+  const s = Math.sqrt(Math.max(0, 1 - c * c));
+  const phi = rand() * Math.PI * 2;
+  return a.multiplyScalar(c)
+    .addScaledVector(t1, s * Math.cos(phi))
+    .addScaledVector(t2, s * Math.sin(phi))
+    .normalize();
+}
+
+// Scatter `count` copies of a small multi-part prop over the sphere using one
+// InstancedMesh per part - a 10x planet needs ~100x the props, far too many
+// draw calls as individual meshes.
+// parts: [{ geo, mat, y, rot }]   opts: { h, sMin, sMax, stretch: [min,max] }
+function scatter(group, rand, radius, count, parts, opts) {
+  const o = Object.assign({ h: 0, sMin: 1, sMax: 1, stretch: null }, opts || {});
+  const meshes = parts.map(pt => {
+    const m = new THREE.InstancedMesh(pt.geo, pt.mat, count);
+    group.add(m);
+    return m;
+  });
+  const locals = parts.map(pt => new THREE.Matrix4().compose(
+    new THREE.Vector3(0, pt.y || 0, 0),
+    new THREE.Quaternion().setFromEuler(pt.rot || new THREE.Euler()),
+    new THREE.Vector3(1, 1, 1)));
+  const base = new THREE.Matrix4(), out = new THREE.Matrix4();
+  const q = new THREE.Quaternion(), spin = new THREE.Quaternion();
+  const sc = new THREE.Vector3();
+  for (let i = 0; i < count; i++) {
+    const dir = randomDir(rand);
+    const s = o.sMin + Math.pow(rand(), 2.2) * (o.sMax - o.sMin); // mostly small, a few giants
+    const sy = o.stretch ? o.stretch[0] + rand() * (o.stretch[1] - o.stretch[0]) : 1;
+    q.setFromUnitVectors(UP_Y, dir);
+    spin.setFromAxisAngle(UP_Y, rand() * Math.PI * 2);
+    q.multiply(spin);
+    sc.set(s, s * sy, s);
+    base.compose(dir.clone().multiplyScalar(radius + o.h * s), q, sc);
+    meshes.forEach((m, k) => { out.multiplyMatrices(base, locals[k]); m.setMatrixAt(i, out); });
+  }
+  meshes.forEach(m => { m.instanceMatrix.needsUpdate = true; });
+}
+
+// a tall faint light pillar so far-away collectibles can be spotted on a huge planet
+function makeBeam(color, height) {
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.32, 0.32, height, 8, 1, true),
+    new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+  beam.position.y = height / 2;
+  return beam;
+}
+
+// Big soft patches of the planet's two colors, one flat color per face, so a
+// wide surface reads as terrain instead of a single washed-out color.
+function paintGround(geo, def, index) {
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const hi = new THREE.Color(def.ground), lo = new THREE.Color(def.low), c = new THREE.Color();
+  const rand = rng(500 + index * 13);
+  const f = def.radius / 14; // patch size ~ a dozen units, independent of planet size
+  const ph = [rand() * 6.28, rand() * 6.28, rand() * 6.28];
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i += 3) {
+    v.set(0, 0, 0);
+    for (let k = 0; k < 3; k++) v.x += pos.getX(i + k), v.y += pos.getY(i + k), v.z += pos.getZ(i + k);
+    v.normalize();
+    const n = Math.sin(v.x * f + ph[0]) * Math.sin(v.y * f * 0.8 + ph[1])
+            + 0.6 * Math.sin((v.y + v.z) * f * 1.7 + ph[2])
+            + 0.35 * Math.sin((v.x - v.z) * f * 3.1);
+    const t = clamp(0.5 + n * 0.32, 0, 1);
+    c.copy(hi).lerp(lo, t * 0.75);
+    c.multiplyScalar(0.94 + rand() * 0.1);
+    for (let k = 0; k < 3; k++) colors.set([c.r, c.g, c.b], (i + k) * 3);
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+}
+
+function placeOn(planet, obj, dir, h) {
+  obj.position.copy(dir).multiplyScalar(planet.radius + h);
+  obj.quaternion.setFromUnitVectors(UP_Y, dir);
+}
 
 function buildPlanet(def, index) {
   const group = new THREE.Group();
   group.position.copy(def.center);
   scene.add(group);
 
-  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(def.radius, 4), mat(def.ground, { roughness: 0.95 }));
+  // enough subdivision that the faceted ground stays within ~2cm of the true
+  // sphere the physics uses (otherwise Mario floats / sinks on big planets)
+  const detail = Math.max(4, Math.round(def.radius / 3.5));
+  const bodyGeo = new THREE.IcosahedronGeometry(def.radius, detail);
+  paintGround(bodyGeo, def, index);
+  const body = new THREE.Mesh(bodyGeo, mat(0xffffff, { roughness: 0.95, vertexColors: true }));
   group.add(body);
 
   const glow = new THREE.Mesh(
-    new THREE.SphereGeometry(def.radius * 1.14, 20, 16),
+    new THREE.SphereGeometry(def.radius * 1.06, 48, 32),
     new THREE.MeshBasicMaterial({ color: def.ground, transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide })
   );
   group.add(glow);
 
   const p = {
     def: def, name: def.name, center: def.center.clone(), radius: def.radius,
-    gravity: def.gravity, group: group, shards: [], springs: [], spinners: [],
+    gravity: def.gravity, group: group, glow: glow, shards: [], springs: [], spinners: [],
     gate: null, exitDir: null, collected: 0, total: 0
   };
 
+  const R = def.radius;
   const rand = rng(1000 + index * 77);
   const place = (obj, dir, h) => {
-    obj.position.copy(dir).multiplyScalar(def.radius + h);
-    obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    obj.position.copy(dir).multiplyScalar(R + h);
+    obj.quaternion.setFromUnitVectors(UP_Y, dir);
     group.add(obj);
   };
+  const spawnAxis = def.spawnDir.clone().normalize();
 
   // ---- decorations per theme ----
   if (def.theme === "meadow") {
     const trunkM = mat(0x8a5a3b), leafM = mat(0x37a05a), rockM = mat(0x8d8f96);
     const petalM = mat(0xffd7e8, { emissive: 0xff8fc4, emissiveIntensity: 0.25 });
-    for (let i = 0; i < 9; i++) {
-      const t = new THREE.Group();
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 1.1, 6), trunkM);
-      trunk.position.y = 0.55; t.add(trunk);
-      const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(0.62, 0), leafM);
-      leaf.position.y = 1.35; t.add(leaf);
-      place(t, randomDir(rand), 0);
-    }
-    for (let i = 0; i < 22; i++) {
-      const f = new THREE.Group();
-      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.34, 4), leafM);
-      stem.position.y = 0.17; f.add(stem);
-      const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 0), petalM);
-      head.position.y = 0.4; f.add(head);
-      place(f, randomDir(rand), 0);
-    }
-    for (let i = 0; i < 8; i++) {
-      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 + rand() * 0.35, 0), rockM);
-      place(r, randomDir(rand), 0.1);
-    }
+    scatter(group, rand, R, 170, [
+      { geo: new THREE.CylinderGeometry(0.13, 0.18, 1.1, 6), mat: trunkM, y: 0.55 },
+      { geo: new THREE.IcosahedronGeometry(0.62, 0), mat: leafM, y: 1.35 }
+    ], { sMin: 0.9, sMax: 4.5 });
+    scatter(group, rand, R, 520, [
+      { geo: new THREE.CylinderGeometry(0.04, 0.04, 0.34, 4), mat: leafM, y: 0.17 },
+      { geo: new THREE.IcosahedronGeometry(0.16, 0), mat: petalM, y: 0.4 }
+    ], { sMin: 0.9, sMax: 1.6 });
+    scatter(group, rand, R, 140, [
+      { geo: new THREE.DodecahedronGeometry(0.45, 0), mat: rockM, y: 0 }
+    ], { h: 0.1, sMin: 0.7, sMax: 6 });
   }
 
   if (def.theme === "crystal") {
     const crystM = mat(0x8fd8ff, { emissive: 0x2f7fd0, emissiveIntensity: 0.55, roughness: 0.35 });
     const rockM = mat(0x4a4f88);
-    for (let i = 0; i < 16; i++) {
-      const c = new THREE.Mesh(new THREE.ConeGeometry(0.28 + rand() * 0.2, 1.0 + rand() * 1.1, 5), crystM);
-      c.position.y = 0.6;
-      const holder = new THREE.Group(); holder.add(c);
-      place(holder, randomDir(rand), 0);
-    }
-    for (let i = 0; i < 8; i++) {
-      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35 + rand() * 0.4, 0), rockM);
-      place(r, randomDir(rand), 0.1);
-    }
+    scatter(group, rand, R, 280, [
+      { geo: new THREE.ConeGeometry(0.38, 1.5, 5), mat: crystM, y: 0.6 }
+    ], { sMin: 0.8, sMax: 5, stretch: [0.7, 1.6] });
+    scatter(group, rand, R, 130, [
+      { geo: new THREE.DodecahedronGeometry(0.5, 0), mat: rockM, y: 0 }
+    ], { h: 0.1, sMin: 0.7, sMax: 5 });
     // spring pads
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 26; i++) {
       const dir = randomDir(rand);
       const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.9, 0.28, 8), MAT.spring);
       pad.position.y = 0.14;
@@ -428,21 +531,19 @@ function buildPlanet(def, index) {
 
   if (def.theme === "moon") {
     const rockM = mat(0x7e8ea3), craterM = mat(0x60707f);
-    for (let i = 0; i < 14; i++) {
-      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.5 + rand() * 0.5, 0.6 + rand() * 0.5, 0.16, 8), craterM);
-      place(c, randomDir(rand), -0.04);
-    }
-    for (let i = 0; i < 7; i++) {
-      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 + rand() * 0.3, 0), rockM);
-      place(r, randomDir(rand), 0.1);
-    }
+    scatter(group, rand, R, 190, [
+      { geo: new THREE.CylinderGeometry(0.75, 0.85, 0.16, 10), mat: craterM, y: 0 }
+    ], { h: -0.04, sMin: 0.8, sMax: 7, stretch: [0.6, 1] });
+    scatter(group, rand, R, 110, [
+      { geo: new THREE.DodecahedronGeometry(0.45, 0), mat: rockM, y: 0 }
+    ], { h: 0.1, sMin: 0.7, sMax: 4 });
     // slow orbiting rocks (decorative)
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 30; i++) {
       const axis = randomDir(rand);
       const start = randomDir(rand).cross(axis).normalize();
-      const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28 + rand() * 0.22, 0), rockM);
+      const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.4 + rand() * 1.4, 0), rockM);
       group.add(m);
-      p.spinners.push({ mesh: m, axis: axis, base: start, dist: def.radius + 2.2 + rand() * 2.4, speed: 0.25 + rand() * 0.35, phase: rand() * 6.28 });
+      p.spinners.push({ mesh: m, axis: axis, base: start, dist: R + 4 + rand() * 14, speed: 0.04 + rand() * 0.06, phase: rand() * 6.28 });
     }
   }
 
@@ -450,30 +551,23 @@ function buildPlanet(def, index) {
     const stemM = mat(0x8a4bb0);
     const petalM = mat(0xffc4f2, { emissive: 0xff5fd0, emissiveIntensity: 0.55 });
     const ringM = mat(0xa9d6ff, { emissive: 0x4aa0ff, emissiveIntensity: 0.7 });
-    for (let i = 0; i < 20; i++) {
-      const f = new THREE.Group();
-      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.6, 4), stemM);
-      stem.position.y = 0.3; f.add(stem);
-      const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.24, 0), petalM);
-      head.position.y = 0.72; f.add(head);
-      place(f, randomDir(rand), 0);
-    }
-    for (let i = 0; i < 6; i++) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.1 + rand() * 0.6, 0.07, 6, 24), ringM);
-      const h = new THREE.Group();
-      ring.rotation.x = Math.PI / 2; ring.position.y = 1.4;
-      h.add(ring); place(h, randomDir(rand), 0);
-    }
+    scatter(group, rand, R, 460, [
+      { geo: new THREE.CylinderGeometry(0.05, 0.05, 0.6, 4), mat: stemM, y: 0.3 },
+      { geo: new THREE.IcosahedronGeometry(0.24, 0), mat: petalM, y: 0.72 }
+    ], { sMin: 0.9, sMax: 3.2 });
+    scatter(group, rand, R, 70, [
+      { geo: new THREE.TorusGeometry(1.4, 0.07, 6, 24), mat: ringM, y: 1.4, rot: new THREE.Euler(Math.PI / 2, 0, 0) }
+    ], { sMin: 0.8, sMax: 3 });
   }
 
-  // ---- star shards ----
-  const shardCount = 5;
+  // ---- star shards (within reach of the landing spot, each with a light pillar) ----
+  const shardCount = def.boss ? 0 : 5;
   const used = [];
   for (let i = 0; i < shardCount; i++) {
     let dir;
     let guard = 0;
-    do { dir = randomDir(rand); guard++; }
-    while (guard < 40 && used.some(d => d.dot(dir) > 0.72));
+    do { dir = randomDirInCap(rand, spawnAxis, 0.12, 1.25); guard++; }
+    while (guard < 60 && used.some(d => d.dot(dir) > 0.93));
     used.push(dir.clone());
 
     const holder = new THREE.Group();
@@ -481,7 +575,7 @@ function buildPlanet(def, index) {
     s.position.y = 1.0;
     const halo = new THREE.Mesh(new THREE.SphereGeometry(0.75, 12, 10), MAT.halo);
     halo.position.y = 1.0;
-    holder.add(s); holder.add(halo);
+    holder.add(s); holder.add(halo); holder.add(makeBeam(0xffd060, 70));
     place(holder, dir, 0);
     p.shards.push({ holder: holder, spin: s, dir: dir.clone(), taken: false });
   }
@@ -489,7 +583,7 @@ function buildPlanet(def, index) {
 
   // ---- exit gate (all planets except the last) ----
   if (index < PLANET_DEFS.length - 1) {
-    const exitDir = randomDir(rand);
+    const exitDir = randomDirInCap(rand, spawnAxis, 0.5, 1.2);
     p.exitDir = exitDir.clone();
     const holder = new THREE.Group();
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.16, 8, 28), MAT.gate);
@@ -497,22 +591,22 @@ function buildPlanet(def, index) {
     const core = new THREE.Mesh(new THREE.SphereGeometry(0.9, 14, 12),
       new THREE.MeshBasicMaterial({ color: 0x8ef0ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }));
     core.position.y = 1.7;
-    holder.add(ring); holder.add(core);
+    holder.add(ring); holder.add(core); holder.add(makeBeam(0x6fe6ff, 90));
     place(holder, exitDir, 0);
     holder.visible = false;
     p.gate = { holder: holder, ring: ring, dir: exitDir.clone() };
   }
 
-  // ---- grand star on the last planet ----
+  // ---- grand star on the last planet (appears where Bowser falls) ----
   if (index === PLANET_DEFS.length - 1) {
-    const dir = new THREE.Vector3(0, 1, 0);
+    const dir = spawnAxis.clone();
     const holder = new THREE.Group();
     const star = new THREE.Mesh(new THREE.OctahedronGeometry(1.05, 0), MAT.grand);
     star.position.y = 2.2;
     const halo = new THREE.Mesh(new THREE.SphereGeometry(2.1, 16, 12),
       new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false }));
     halo.position.y = 2.2;
-    holder.add(star); holder.add(halo);
+    holder.add(star); holder.add(halo); holder.add(makeBeam(0xffe08a, 120));
     place(holder, dir, 0);
     holder.visible = false;
     p.grand = { holder: holder, star: star, dir: dir.clone(), taken: false };
@@ -653,9 +747,11 @@ const P = {
   up: new THREE.Vector3(0, 1, 0),
   face: new THREE.Vector3(0, 0, 1),
   grounded: false,
-  speed: 6.4,
+  speed: 8.5,   // a touch faster than before - the planets are 10x wider now
   jump: 11.5,
-  walkPhase: 0
+  walkPhase: 0,
+  health: 3,
+  invuln: 0
 };
 
 // camera state
@@ -672,12 +768,487 @@ let startTime = 0, finishTime = 0;
 let transition = null;
 let menuAngle = 0;
 
+// ---------- Bowser: boss of the last planet ----------
+// Stomp his head 3 times. He chases Mario, spits fireballs that roll along
+// the ground, and jump-slams to send out shockwave rings to hop over.
+const BOSS_HEIGHT = 4.0;
+const BOSS_HP = 3;
+const Boss = {
+  planet: null, root: new THREE.Group(), rig: new THREE.Group(),
+  ready: false, bones: {}, rest: {}, mats: [],
+  dir: new THREE.Vector3(0, 1, 0), face: new THREE.Vector3(0, 0, 1),
+  alt: 0, vAlt: 0, hp: BOSS_HP, state: "off", t: 0, attackTimer: 0,
+  phase: 0, mouth: 0, flags: {}, fireballs: [], waves: [],
+  defeated: false, restartTimer: 0, smokeTimer: 0, lastAttack: "slam"
+};
+Boss.root.add(Boss.rig);
+Boss.root.visible = false;
+let camShake = 0;
+
+(function loadBowser() {
+  const loader = new THREE.GLTFLoader();
+  loader.load(
+    "assets/bowser/scene.gltf",
+    (gltf) => {
+      const model = gltf.scene;
+      // the file ships a stray helper mesh hundreds of units away - drop it
+      const stray = [];
+      model.traverse(o => { if (o.isMesh && o.material && /mssbMtl/.test(o.material.name)) stray.push(o); });
+      stray.forEach(o => o.parent.remove(o));
+      model.traverse(o => {
+        if (!o.isMesh) return;
+        // skinned pose lies far outside the bind-pose bounds: never cull, and
+        // let the measuring rays below past the bounding-sphere early-out
+        o.frustumCulled = false;
+        if (o.isSkinnedMesh) {
+          o.geometry.computeBoundingSphere();
+          o.geometry.boundingSphere.radius = 1e5;
+        }
+        const m = o.material.clone();
+        o.material = m;
+        Boss.mats.push({ m: m, emissive: m.emissive ? m.emissive.clone() : null });
+      });
+
+      // measure the posed character with rays (same reason as Mario: Box3 only
+      // sees the raw bind data of a skinned mesh)
+      model.updateMatrixWorld(true);
+      const rc = new THREE.Raycaster();
+      rc.far = 1e7;
+      rc.set(new THREE.Vector3(0, 1e6, 0), new THREE.Vector3(0, -1, 0));
+      const topHit = rc.intersectObject(model, true)[0];
+      let minY = Infinity;
+      if (topHit) {
+        const ext = Math.max(1, topHit.point.y) * 0.9;
+        const step = ext / 30;
+        for (let x = -ext; x <= ext; x += step) {
+          for (let z = -ext; z <= ext; z += step) {
+            rc.set(new THREE.Vector3(x, -1e6, z), new THREE.Vector3(0, 1, 0));
+            const hit = rc.intersectObject(model, true)[0];
+            if (hit && hit.point.y < minY) minY = hit.point.y;
+          }
+        }
+      }
+      let scale = 1, footY = 0;
+      if (topHit && isFinite(minY) && topHit.point.y > minY) {
+        scale = BOSS_HEIGHT / (topHit.point.y - minY);
+        footY = minY;
+      }
+      model.scale.setScalar(scale);
+      model.position.y = -footY * scale;
+      Boss.rig.add(model);
+
+      model.traverse(o => { if (o.isBone) Boss.bones[o.name] = o; });
+      Object.keys(Boss.bones).forEach(k => { Boss.rest[k] = Boss.bones[k].rotation.clone(); });
+      Boss.ready = true;
+    },
+    undefined,
+    (err) => {
+      console.error("Bowser model failed to load, using a simple stand-in:", err);
+      Boss.rig.add(buildFallbackBowser());
+      Boss.ready = true;
+    }
+  );
+})();
+
+function buildFallbackBowser() {
+  const g = new THREE.Group();
+  const shellM = mat(0x2f9a3a), skinM = mat(0xe8c26a), spikeM = mat(0xf4f0e0), hairM = mat(0xe0442c), hornM = mat(0xf7f1dc);
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(1.35, 16, 12), shellM);
+  shell.position.set(0, 1.9, -0.35); shell.scale.set(1, 1.05, 0.9); g.add(shell);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 12), skinM);
+  belly.position.set(0, 1.7, 0.35); g.add(belly);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.8, 14, 10), skinM);
+  head.position.set(0, 3.25, 0.55); g.add(head);
+  for (let i = 0; i < 7; i++) {
+    const sp = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.55, 6), spikeM);
+    const a = (i / 7) * Math.PI * 2;
+    sp.position.set(Math.cos(a) * 0.9, 2.2 + Math.sin(a) * 0.9, -1.4);
+    sp.rotation.x = -Math.PI / 2; g.add(sp);
+  }
+  [-0.45, 0.45].forEach(x => {
+    const h = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.6, 6), hornM);
+    h.position.set(x, 3.95, 0.4); h.rotation.z = -x * 0.8; g.add(h);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 0.9, 8), skinM);
+    leg.position.set(x * 1.6, 0.45, 0); g.add(leg);
+  });
+  const hair = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.9, 6), hairM);
+  hair.position.set(0, 3.9, 0.05); hair.rotation.x = -0.6; g.add(hair);
+  return g;
+}
+
+function bossClearProjectiles() {
+  Boss.fireballs.forEach(f => Boss.planet && Boss.planet.group.remove(f.mesh));
+  Boss.waves.forEach(w => { Boss.planet && Boss.planet.group.remove(w.mesh); w.mesh.geometry.dispose(); });
+  Boss.fireballs.length = 0;
+  Boss.waves.length = 0;
+}
+
+function bossReset() {
+  bossClearProjectiles();
+  if (Boss.root.parent) Boss.root.parent.remove(Boss.root);
+  Boss.root.visible = false;
+  Boss.state = "off";
+  Boss.defeated = false;
+  Boss.restartTimer = 0;
+  Boss.hp = BOSS_HP;
+}
+
+function bossStart(planet) {
+  bossClearProjectiles();
+  Boss.planet = planet;
+  planet.group.add(Boss.root);
+  Boss.root.visible = true;
+  Boss.root.scale.setScalar(1);
+  Boss.rig.rotation.set(0, 0, 0);
+  Boss.hp = BOSS_HP;
+  Boss.defeated = false;
+  Boss.state = "intro";
+  Boss.t = 0; Boss.alt = 0; Boss.vAlt = 0; Boss.flags = {};
+  Boss.restartTimer = 0;
+  const spawn = planet.def.spawnDir.clone().normalize();
+  const side = projectTangent(new THREE.Vector3(1, 0, 0), spawn);
+  Boss.dir.copy(spawn).applyAxisAngle(side, 24 / planet.radius).normalize();
+  Boss.face.copy(projectTangent(spawn.clone().sub(Boss.dir), Boss.dir));
+  // turn the camera so Mario lands looking straight at him
+  camDir.copy(projectTangent(Boss.dir.clone().sub(spawn), spawn));
+  P.face.copy(camDir);
+  P.health = 3;
+  P.invuln = 0;
+  Audio.roar();
+  camShake = 0.4;
+  toast("Bowser appears!", 2600);
+  hint("Jump on Bowser's head 3 times!\nDodge the fireballs, hop over the shockwaves.", 8000);
+  updateHud();
+}
+
+function bossFlash(on) {
+  Boss.mats.forEach(e => {
+    if (!e.m.emissive) return;
+    if (on) e.m.emissive.setRGB(0.9, 0.12, 0.05); else e.m.emissive.copy(e.emissive);
+  });
+}
+
+function bossMove(dist) {
+  const R = Boss.planet.radius;
+  const p = Boss.dir.clone().multiplyScalar(R).addScaledVector(Boss.face, dist);
+  Boss.dir.copy(p.normalize());
+  Boss.face.copy(projectTangent(Boss.face, Boss.dir));
+}
+
+function bossTurnTo(target, rate) {
+  Boss.face.lerp(target, rate);
+  Boss.face.copy(projectTangent(Boss.face, Boss.dir));
+}
+
+function spawnFireball(angle) {
+  const R = Boss.planet.radius;
+  const up = Boss.dir;
+  const f = Boss.face.clone().applyAxisAngle(up, angle);
+  const axis = new THREE.Vector3().crossVectors(up, f).normalize();
+  const dir = up.clone().applyAxisAngle(axis, 1.8 / R);
+  const mesh = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 1),
+    new THREE.MeshStandardMaterial({ color: 0xffa040, emissive: 0xff4a10, emissiveIntensity: 1.6, roughness: 0.4 }));
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(0.95, 12, 10),
+    new THREE.MeshBasicMaterial({ color: 0xff7a30, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
+  mesh.add(core); mesh.add(halo);
+  Boss.planet.group.add(mesh);
+  Boss.fireballs.push({ mesh: mesh, core: core, dir: dir, axis: axis, life: 5, trail: 0 });
+}
+
+function spawnWave() {
+  const N = 96;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array((N + 1) * 2 * 3), 3));
+  const idx = [];
+  for (let i = 0; i < N; i++) {
+    const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+    idx.push(a, c, b, b, c, d);
+  }
+  geo.setIndex(idx);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color: 0xff9a40, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending,
+    depthWrite: false, side: THREE.DoubleSide }));
+  mesh.frustumCulled = false;
+  Boss.planet.group.add(mesh);
+  const c = Boss.dir.clone();
+  const t1 = projectTangent(new THREE.Vector3(0.3, 0.8, 0.5), c);
+  const t2 = new THREE.Vector3().crossVectors(c, t1);
+  Boss.waves.push({ mesh: mesh, c: c, t1: t1, t2: t2, r: 1.5, N: N });
+}
+
+function updateWaveGeometry(w, R) {
+  const pos = w.mesh.geometry.attributes.position;
+  const th = w.r / R, ct = Math.cos(th), st = Math.sin(th);
+  const d = new THREE.Vector3();
+  for (let i = 0; i <= w.N; i++) {
+    const phi = (i / w.N) * Math.PI * 2;
+    d.copy(w.c).multiplyScalar(ct)
+      .addScaledVector(w.t1, st * Math.cos(phi))
+      .addScaledVector(w.t2, st * Math.sin(phi));
+    const lo = d.clone().multiplyScalar(R + 0.03), hi = d.clone().multiplyScalar(R + 0.75);
+    pos.setXYZ(i * 2, lo.x, lo.y, lo.z);
+    pos.setXYZ(i * 2 + 1, hi.x, hi.y, hi.z);
+  }
+  pos.needsUpdate = true;
+}
+
+function hurtPlayer(away) {
+  if (P.invuln > 0 || state !== S.PLAYING || Boss.restartTimer > 0) return;
+  P.health--;
+  P.invuln = 1.6;
+  Audio.hurt();
+  camShake = 0.35;
+  const up = surfaceUp(P.pos, active);
+  const push = projectTangent(away, up);
+  P.vel.copy(push).multiplyScalar(9).addScaledVector(up, 8);
+  P.grounded = false;
+  Particles.spawn(P.pos.clone().addScaledVector(up, 0.8), 0xff6a4a, 14, 3);
+  updateHud();
+  if (P.health <= 0) {
+    toast("Bowser got you! Try again.", 2200);
+    Boss.restartTimer = 1.8;
+    P.invuln = 99;
+  }
+}
+
+function updateBoss(dt) {
+  if (Boss.state === "off" || !Boss.planet) return;
+  const pl = Boss.planet, R = pl.radius;
+
+  if (Boss.restartTimer > 0) {
+    Boss.restartTimer -= dt;
+    if (Boss.restartTimer <= 0) {
+      landOnPlanet(planets.indexOf(pl));
+      return;
+    }
+  }
+
+  Boss.t += dt;
+  const up = Boss.dir;
+  const mLocal = P.pos.clone().sub(pl.center);
+  const mUp = mLocal.clone().normalize();
+  const mH = mLocal.length() - R;
+  const arc = R * Math.acos(clamp(mUp.dot(up), -1, 1));
+  const toMario = projectTangent(mUp.clone().sub(up), up);
+  const rage = BOSS_HP - Boss.hp; // 0..2, gets faster and meaner each hit
+  let mouthTarget = 0, walking = false;
+
+  switch (Boss.state) {
+    case "intro":
+      bossTurnTo(toMario, Math.min(1, dt * 3));
+      mouthTarget = Boss.t < 1.6 ? 1 : 0;
+      if (Boss.t > 2.6) { Boss.state = "walk"; Boss.t = 0; Boss.attackTimer = 2.2; }
+      break;
+
+    case "walk":
+      bossTurnTo(toMario, Math.min(1, dt * 2.6));
+      if (arc > 2.4) { bossMove((3.4 + rage * 1.2) * dt); walking = true; }
+      Boss.attackTimer -= dt;
+      if (Boss.attackTimer <= 0) {
+        let next = Boss.lastAttack === "fire" ? "slam" : "fire";
+        if (arc > 14) next = "fire";
+        else if (arc < 6) next = "slam";
+        Boss.state = next; Boss.lastAttack = next;
+        Boss.t = 0; Boss.flags = {};
+      }
+      break;
+
+    case "fire":
+      bossTurnTo(toMario, Math.min(1, dt * 4));
+      mouthTarget = Boss.t < 0.75 ? Boss.t / 0.75 : 1;
+      if (Boss.t >= 0.75 && !Boss.flags.fired) {
+        Boss.flags.fired = true;
+        const spread = rage >= 2 ? [-0.5, -0.25, 0, 0.25, 0.5] : [-0.3, 0, 0.3];
+        spread.forEach(spawnFireball);
+        Audio.fire();
+      }
+      if (rage >= 1 && Boss.t >= 1.35 && !Boss.flags.fired2) {
+        Boss.flags.fired2 = true;
+        [-0.15, 0.15].forEach(spawnFireball);
+        Audio.fire();
+      }
+      if (Boss.t > 1.7) { Boss.state = "tired"; Boss.t = 0; }
+      break;
+
+    case "tired": // the opening - he stands panting, smoke puffing from his nose
+      mouthTarget = 0.35;
+      Boss.smokeTimer -= dt;
+      if (Boss.smokeTimer <= 0) {
+        Boss.smokeTimer = 0.3;
+        const head = pl.center.clone().addScaledVector(up, R + Boss.alt + BOSS_HEIGHT * 0.85).addScaledVector(Boss.face, 0.8);
+        Particles.spawn(head, 0x9a9aa8, 6, 1.2);
+      }
+      if (Boss.t > 1.5 - rage * 0.25) { Boss.state = "walk"; Boss.t = 0; Boss.attackTimer = 3.0 - rage * 0.6; }
+      break;
+
+    case "slam":
+      if (!Boss.flags.jumped) {
+        bossTurnTo(toMario, Math.min(1, dt * 4));
+        Boss.rig.scale.set(1.08, 0.86, 1.08);
+        if (Boss.t > 0.45) { Boss.flags.jumped = true; Boss.vAlt = 11; Boss.rig.scale.set(1, 1, 1); Audio.jump(); }
+      } else {
+        Boss.vAlt -= pl.gravity * dt;
+        Boss.alt += Boss.vAlt * dt;
+        bossMove(Math.min(arc, 4 + rage * 2) * dt);
+        if (Boss.alt <= 0 && Boss.vAlt < 0) {
+          Boss.alt = 0; Boss.vAlt = 0;
+          spawnWave();
+          if (rage >= 2) setTimeout(() => { if (Boss.state !== "off" && Boss.state !== "defeated") spawnWave(); }, 450);
+          Audio.boom();
+          camShake = 0.7;
+          Particles.spawn(pl.center.clone().addScaledVector(up, R + 0.3), 0xffc080, 30, 6);
+          Boss.state = "tired"; Boss.t = 0;
+        }
+      }
+      break;
+
+    case "hurt":
+      Boss.rig.rotation.y += dt * 14 * Math.max(0, 1 - Boss.t / 1.0);
+      bossFlash(Math.floor(Boss.t * 10) % 2 === 0);
+      if (Boss.alt > 0 || Boss.vAlt > 0) {
+        Boss.vAlt -= pl.gravity * dt; Boss.alt = Math.max(0, Boss.alt + Boss.vAlt * dt);
+        if (Boss.alt === 0) Boss.vAlt = 0;
+      }
+      if (Boss.t > 1.6) {
+        bossFlash(false);
+        Boss.rig.rotation.y = 0;
+        if (Boss.hp <= 0) {
+          Boss.state = "defeated"; Boss.t = 0;
+          Audio.roar();
+          toast("Bowser is defeated!", 3000);
+        } else {
+          Boss.state = "walk"; Boss.t = 0; Boss.attackTimer = 1.4;
+          Audio.roar();
+          camShake = 0.3;
+        }
+      }
+      break;
+
+    case "defeated":
+      Boss.rig.rotation.y += dt * (8 + Boss.t * 10);
+      Boss.alt += dt * (3 + Boss.t * 22);
+      Boss.root.scale.setScalar(Math.max(0.01, 1 - Boss.t / 2.4));
+      if (Boss.t > 2.4) {
+        Boss.root.visible = false;
+        Boss.state = "off";
+        Boss.defeated = true;
+        bossClearProjectiles();
+        const g = pl.grand;
+        g.dir.copy(Boss.dir);
+        placeOn(pl, g.holder, g.dir, 0);
+        g.holder.visible = true;
+        Particles.spawn(pl.center.clone().addScaledVector(g.dir, R + 2.2), 0xffe08a, 50, 6);
+        Audio.gate();
+        hint("Grab the Grand Star!", 6000);
+        updateHud();
+      }
+      break;
+  }
+
+  // ---- place & orient ----
+  Boss.root.position.copy(up).multiplyScalar(R + Boss.alt);
+  const bx = new THREE.Vector3().crossVectors(up, Boss.face).normalize();
+  Boss.root.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(bx, up, Boss.face));
+  if (Boss.state !== "slam") Boss.rig.scale.lerp(new THREE.Vector3(1, 1, 1), Math.min(1, dt * 8));
+
+  // ---- procedural animation on the skeleton (the model has no clips) ----
+  Boss.phase += dt * (walking ? 6.5 + rage : 0);
+  const w = walking ? 1 : 0;
+  Boss.rig.position.y = Math.abs(Math.sin(Boss.phase)) * 0.14 * w;
+  Boss.rig.rotation.z = Math.sin(Boss.phase) * 0.09 * w;
+  Boss.mouth += (mouthTarget - Boss.mouth) * Math.min(1, dt * 10);
+  // Axes verified by rendering test poses: shoulder local Z raises (+) / lowers (-)
+  // both arms, shoulder Y swings them forward; hip X swings a leg, and the
+  // mirrored L/R hips need opposite signs to alternate.
+  const b = Boss.bones, r = Boss.rest;
+  const roaring = Boss.state === "intro" || Boss.state === "hurt" || Boss.state === "defeated";
+  const armLift = roaring ? 0.55 + Math.sin(clock.elapsedTime * 10) * 0.15 : -0.95;
+  const stride = Math.sin(Boss.phase) * 0.35 * w;
+  if (b.c_mouth_06) b.c_mouth_06.rotation.x = r.c_mouth_06.x + Boss.mouth * 0.55;
+  if (b.c_head_05) b.c_head_05.rotation.x = r.c_head_05.x - Boss.mouth * 0.2;
+  if (b.R_leg_1_042) b.R_leg_1_042.rotation.x = r.R_leg_1_042.x + stride;
+  if (b.L_leg_1_045) b.L_leg_1_045.rotation.x = r.L_leg_1_045.x - stride;
+  if (b.R_shoulder_012) {
+    b.R_shoulder_012.rotation.z = r.R_shoulder_012.z + armLift;
+    b.R_shoulder_012.rotation.y = r.R_shoulder_012.y - stride * 0.8;
+  }
+  if (b.L_shoulder_025) {
+    b.L_shoulder_025.rotation.z = r.L_shoulder_025.z + armLift;
+    b.L_shoulder_025.rotation.y = r.L_shoulder_025.y + stride * 0.8;
+  }
+  if (b.c_tail_1_039) b.c_tail_1_039.rotation.y = r.c_tail_1_039.y + Math.sin(clock.elapsedTime * 2.2) * 0.35;
+
+  // ---- Mario vs Bowser ----
+  const live = Boss.state === "walk" || Boss.state === "fire" || Boss.state === "tired" || Boss.state === "slam";
+  if (live && Boss.restartTimer <= 0) {
+    const rel = mH - Boss.alt;
+    const falling = P.vel.dot(mUp) < 0;
+    if (falling && arc < 2.2 && rel >= BOSS_HEIGHT * 0.48 && rel <= BOSS_HEIGHT + 2) {
+      // stomp!
+      Boss.hp--;
+      Boss.state = "hurt"; Boss.t = 0;
+      if (Boss.alt > 0) Boss.vAlt = Math.min(Boss.vAlt, 0);
+      Audio.bossHit();
+      camShake = 0.5;
+      const vt = projectTangent(toMario.lengthSq() ? toMario : Boss.face, mUp);
+      P.vel.copy(vt).multiplyScalar(5).addScaledVector(mUp, 14);
+      P.grounded = false;
+      Particles.spawn(pl.center.clone().addScaledVector(up, R + Boss.alt + BOSS_HEIGHT), 0xffe27a, 26, 5);
+      toast(Boss.hp === 2 ? "Bonk! Two more!" : Boss.hp === 1 ? "Bonk! One more!" : "BONK!", 1500);
+      updateHud();
+    } else if (arc < 1.7 && rel < BOSS_HEIGHT * 0.48 && rel > -1) {
+      hurtPlayer(toMario.clone());
+    }
+  }
+
+  // ---- fireballs ----
+  const marioMid = P.pos.clone().addScaledVector(mUp, 0.7);
+  for (let i = Boss.fireballs.length - 1; i >= 0; i--) {
+    const f = Boss.fireballs[i];
+    f.life -= dt;
+    f.dir.applyAxisAngle(f.axis, (12 + rage * 2) * dt / R).normalize();
+    f.mesh.position.copy(f.dir).multiplyScalar(R + 0.75);
+    f.core.rotation.x += dt * 9; f.core.rotation.y += dt * 7;
+    const wp = f.mesh.position.clone().add(pl.center);
+    f.trail -= dt;
+    if (f.trail <= 0) { f.trail = 0.12; Particles.spawn(wp, 0xff7a30, 4, 1); }
+    let gone = f.life <= 0;
+    if (!gone && wp.distanceTo(marioMid) < 1.15) {
+      hurtPlayer(new THREE.Vector3().crossVectors(f.axis, f.dir));
+      gone = true;
+    }
+    if (gone) {
+      pl.group.remove(f.mesh);
+      Boss.fireballs.splice(i, 1);
+    }
+  }
+
+  // ---- shockwaves ----
+  for (let i = Boss.waves.length - 1; i >= 0; i--) {
+    const wv = Boss.waves[i];
+    wv.r += (11 + rage * 2) * dt;
+    updateWaveGeometry(wv, R);
+    wv.mesh.material.opacity = 0.85 * Math.max(0, 1 - wv.r / 34);
+    const marioArc = R * Math.acos(clamp(mUp.dot(wv.c), -1, 1));
+    if (mH < 0.65 && Math.abs(marioArc - wv.r) < 0.7) {
+      hurtPlayer(projectTangent(mUp.clone().sub(wv.c), mUp));
+    }
+    if (wv.r > 34) {
+      pl.group.remove(wv.mesh);
+      wv.mesh.geometry.dispose();
+      Boss.waves.splice(i, 1);
+    }
+  }
+}
+
 // ---------- UI ----------
 const ui = {
   menu: document.getElementById("menu"),
   victory: document.getElementById("victory"),
   hud: document.getElementById("hud"),
   shards: document.getElementById("shards"),
+  hearts: document.getElementById("hearts"),
   planetName: document.getElementById("planetName"),
   hint: document.getElementById("hint"),
   toast: document.getElementById("toast"),
@@ -705,7 +1276,15 @@ function hint(msg, ms) {
   if (ms) hintTimer = setTimeout(() => ui.hint.classList.remove("show"), ms);
 }
 function updateHud() {
-  ui.shards.textContent = "⭐ " + active.collected + " / " + active.total;
+  const boss = !!active.def.boss;
+  ui.shards.classList.toggle("boss", boss);
+  ui.hearts.classList.toggle("on", boss && !Boss.defeated);
+  if (boss) {
+    ui.shards.textContent = Boss.defeated ? "⭐ Bowser defeated!" : "Bowser " + "♥".repeat(Math.max(0, Boss.hp)) + "♡".repeat(BOSS_HP - Math.max(0, Boss.hp));
+    ui.hearts.textContent = "❤️".repeat(Math.max(0, P.health)) + "🤍".repeat(3 - Math.max(0, P.health));
+  } else {
+    ui.shards.textContent = "⭐ " + active.collected + " / " + active.total;
+  }
   ui.planetName.textContent = active.name;
 }
 function updateSoundLabels() {
@@ -830,8 +1409,9 @@ function landOnPlanet(index, dirOverride) {
   player.position.copy(P.pos);
   orientPlayer(P.up, camDir, 1);
   Audio.setKey(active.def.key);
+  player.visible = true;
+  if (active.def.boss && !Boss.defeated && state !== S.MENU) bossStart(active);
   updateHud();
-  if (active.grand) active.grand.holder.visible = true;
 }
 
 function resetGame() {
@@ -843,6 +1423,9 @@ function resetGame() {
     if (p.grand) { p.grand.taken = false; p.grand.holder.visible = false; }
   });
   transition = null;
+  bossReset();
+  P.health = 3;
+  P.invuln = 0;
   landOnPlanet(0);
   startTime = performance.now();
 }
@@ -875,9 +1458,9 @@ function startTransition(nextIndex) {
   const endDir = target.def.spawnDir.clone().normalize();
   const endPos = target.center.clone().addScaledVector(endDir, target.radius);
   const mid = P.pos.clone().add(endPos).multiplyScalar(0.5);
-  const away = mid.clone().sub(active.center).normalize().multiplyScalar(26);
+  const away = mid.clone().sub(active.center).normalize().multiplyScalar(26 * WORLD_SCALE);
   transition = {
-    t: 0, dur: 2.6,
+    t: 0, dur: clamp(P.pos.distanceTo(endPos) / 260, 3.2, 6),
     a: P.pos.clone(),
     b: mid.add(away),
     c: endPos,
@@ -1105,6 +1688,15 @@ function updatePlaying(dt) {
       }, 1500);
     }
   }
+
+  // damage blink
+  if (P.invuln > 0) {
+    P.invuln -= dt;
+    player.visible = P.invuln <= 0 || Math.floor(P.invuln * 14) % 2 === 0;
+  }
+
+  // last: the boss may restart the fight (re-landing Mario)
+  if (active.def.boss) updateBoss(dt);
 }
 
 function updateCameraFollow(dt, extra) {
@@ -1120,6 +1712,12 @@ function updateCameraFollow(dt, extra) {
     want.copy(active.center).addScaledVector(want.clone().sub(active.center).normalize(), active.radius + 1.6);
   }
   camera.position.lerp(want, Math.min(1, dt * 5.5));
+  if (camShake > 0) {
+    camera.position.x += (Math.random() - 0.5) * camShake;
+    camera.position.y += (Math.random() - 0.5) * camShake;
+    camera.position.z += (Math.random() - 0.5) * camShake;
+    camShake = Math.max(0, camShake - dt * 1.6);
+  }
   camera.up.copy(camUp);
   camera.lookAt(P.pos.clone().addScaledVector(up, 1.0));
 }
@@ -1156,8 +1754,7 @@ function updateTransition(dt) {
     landOnPlanet(tr.next, tr.endDir);
     state = S.PLAYING;
     toast("Welcome to " + active.name);
-    if (active.springs.length) hint("The purple pads bounce you high.", 5000);
-    if (active.grand) hint("Collect 5 shards, then reach the Grand Star.", 6000);
+    if (active.springs.length) hint("The purple pads bounce you high.\nFollow the beams of light to the shards.", 6000);
     Particles.spawn(P.pos, 0xffffff, 24, 4);
   }
 }
@@ -1165,10 +1762,10 @@ function updateTransition(dt) {
 function updateMenuCamera(dt) {
   menuAngle += dt * 0.16;
   const p = planets[0];
-  const r = p.radius + 12;
+  const r = p.radius * 2.3;
   camera.position.set(
     p.center.x + Math.cos(menuAngle) * r,
-    p.center.y + 6,
+    p.center.y + p.radius * 0.66,
     p.center.z + Math.sin(menuAngle) * r
   );
   camera.up.set(0, 1, 0);
@@ -1182,6 +1779,8 @@ function animate() {
 
   // ambient spin for shards, gates, spinners
   for (const p of planets) {
+    // the halo shell is only meant to be seen from space; from inside it would tint the whole view
+    p.glow.visible = camera.position.distanceTo(p.center) > p.radius * 1.06 + 0.5;
     for (const s of p.shards) if (s.holder.visible) {
       s.spin.rotation.y += dt * 1.8;
       s.spin.position.y = 1.0 + Math.sin(t * 2 + s.dir.x * 5) * 0.12;
@@ -1206,6 +1805,7 @@ function animate() {
 
   Particles.update(dt);
   Audio.update();
+  starfield.position.copy(camera.position);
   renderer.render(scene, camera);
 }
 
