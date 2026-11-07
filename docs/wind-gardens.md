@@ -46,11 +46,20 @@ The canyon is a full ring around the planet, so the bridge is the only way acros
 
 Luigi, the DK cart, goomba and koopa are primitives built in code. The Mario GLB is unchanged. Luigi stands on the balcony with a lantern that flashes long, short, short every 6 s and shoots a light beam up so it can be seen from the landing. After the rescue he turns toward Mario, waves, and hops down to the cart. A real Luigi GLB can replace `makeLuigi()`.
 
-The punch pose moves the right shoulder bone (`PUNCH_ARM` in `index.html`); the ladder climb raises both arms. The offsets are a first guess from the rig notes in `updatePlaying` and have not yet been checked visually.
+The punch pose moves the right shoulder bone (`PUNCH_ARM` in `index.html`); the ladder climb raises both arms. The punch pose was checked in a side-view screenshot (arm extends forward); the climb pose has only been checked from behind.
 
 ## Test hooks
 
 `window.__dbg` exposes `P`, `WindGardens.debug` (coordinates, state, enemies, `setBladeAngle`), `step(n, dt)` to advance the simulation without rendering, and `pause`. They are for QA scripts and have no effect on play.
+
+## What was verified, and how
+
+All runs: headless Chromium with software rendering, driven through `__dbg.step`. Frame rate and load time were **not** measured (software rendering says nothing about a real GPU). Touch was only emulated (button positions and taps), never on a real device, and no child has played it.
+
+- Single jump falls into the canyon and respawns at the bridge checkpoint; double jump lands on the far planks.
+- Wrong blade releases the brake after 3.2 s and allows a retry; correct blade starts the climb, rescue happens once, cart and gate appear, gate launches to the next planet.
+- Goomba hurts when ignored and is defeated by a punch at 4.7 units; crate breaks; grounded koopa is defeated by a punch; standing still under the koopa's shadow costs a heart, sidestepping does not.
+- Pedestal cannot be climbed with a single jump and can with two.
 
 ## Open questions for Moshe
 

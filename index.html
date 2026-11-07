@@ -1664,6 +1664,8 @@ function updatePlaying(dt) {
   if (punchQueued && P.punchT <= 0) {
     P.punchT = PUNCH_TIME; P.punchHit = false;
     P.punchDir.copy(projectTangent(moving ? moveDir : (P.face.lengthSq() ? P.face : camDir), up));
+    if (wg) P.punchDir.copy(wg.aim(P, P.punchDir, up));
+    P.face.copy(P.punchDir);
     vTan.addScaledVector(P.punchDir, 3.5);
     Audio.noise(0.1, 0.14);
   }
@@ -2035,7 +2037,7 @@ landOnPlanet(0);
 state = S.MENU;
 // test/QA access (see docs/wind-gardens.md)
 let dbgPause = false;
-window.__dbg = { P, camera, WindGardens, set pause(v) { dbgPause = v; }, step(n, dt) { for (let i = 0; i < n; i++) { if (state === S.PLAYING) { updatePlaying(dt || 1 / 60); updateCameraFollow(dt || 1 / 60, P.grounded ? 0 : 1.2); } Particles.update(dt || 1 / 60); } },  get state() { return state; }, get active() { return active; }, planets, jump() { jumpQueued = true; }, punch() { punchQueued = true; }, keys };
+window.__dbg = { P, camera, camDir, WindGardens, set pause(v) { dbgPause = v; }, step(n, dt) { for (let i = 0; i < n; i++) { if (state === S.PLAYING) { updatePlaying(dt || 1 / 60); updateCameraFollow(dt || 1 / 60, P.grounded ? 0 : 1.2); } Particles.update(dt || 1 / 60); } },  get state() { return state; }, get active() { return active; }, planets, jump() { jumpQueued = true; }, punch() { punchQueued = true; }, keys };
 animate();
 </script>
 </body>

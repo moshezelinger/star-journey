@@ -539,10 +539,10 @@ const WindGardens = (() => {
     } else if (e.state === "alert") {
       e.fwd.copy(toM); bang.visible = true; bang.position.y = 2.1 + Math.sin(e.t * 20) * 0.1;
       body.position.y = Math.abs(Math.sin(e.t * 10)) * 0.4;
-      if (e.t > 0.7) { e.state = "charge"; e.t = 0; e.dirLock.copy(toM); bang.visible = false; }
+      if (e.t > 0.9) { e.state = "charge"; e.t = 0; e.dirLock.copy(toM); bang.visible = false; }
     } else if (e.state === "charge") {
       e.fwd.copy(e.dirLock);
-      e.pos.addScaledVector(e.dirLock, 10 * dt); snap(e.pos, 0);
+      e.pos.addScaledVector(e.dirLock, 9 * dt); snap(e.pos, 0);
       body.position.y = Math.abs(Math.sin(e.t * 22)) * 0.18;
       if (e.t > 1.7) { e.state = "recover"; e.t = 0; }
     } else if (e.state === "recover") {
@@ -630,9 +630,28 @@ const WindGardens = (() => {
     if (e.state !== "dive" && e.h < 2 && e.state !== "grounded" && koopa.g.position.distanceTo(mp) < 1.2) ctx.hurt(mp.clone().sub(e.pos));
   }
 
+  // Aim assist: if something punchable is close and roughly in front, turn the punch toward it.
+  function aim(P, dir, up) {
+    const mp = P.pos.clone().sub(center);
+    let best = null, bestD = 4.6;
+    const consider = (local, ok) => {
+      if (!ok) return;
+      const d = local.distanceTo(mp);
+      if (d >= bestD) return;
+      const to = GameShared.projectTangent(local.clone().sub(mp), up);
+      if (to.dot(dir) < -0.2) return;
+      best = to; bestD = d;
+    };
+    if (S.goomba && !S.goomba.dead && goomba) consider(S.goomba.pos, true);
+    if (S.koopa && !S.koopa.dead && koopa) consider(S.koopa.pos, S.koopa.h < 2.2);
+    if (lever && S.blades.state === "spin" && !S.rescued) consider(lever.g.position, true);
+    if (!crateSolid.gone && crateMesh) consider(crateMesh.position, true);
+    return best || dir;
+  }
+
   // ---- punch: called once per punch at the impact moment ----
   function punchHit(P, fwd, up) {
-    const origin = P.pos.clone().addScaledVector(up, 0.9).addScaledVector(fwd, 1.1);
+    const origin = P.pos.clone().addScaledVector(up, 0.9).addScaledVector(fwd, 1.2);
     let hit = 0;
     const loc = origin.clone().sub(center);
     // crate
@@ -647,11 +666,11 @@ const WindGardens = (() => {
     // enemies
     if (S.goomba && !S.goomba.dead && goomba) {
       const gw = goomba.g.getWorldPosition(new V3());
-      if (gw.distanceTo(origin) < 2.4) { defeat(S.goomba, goomba, P, gw.clone().sub(center).normalize()); hit++; env.Audio.bossHit(); }
+      if (gw.distanceTo(origin) < 2.8) { defeat(S.goomba, goomba, P, gw.clone().sub(center).normalize()); hit++; env.Audio.bossHit(); }
     }
     if (S.koopa && !S.koopa.dead && koopa && S.koopa.h < 2.2) {
       const kw = koopa.g.getWorldPosition(new V3());
-      if (kw.distanceTo(origin) < 2.6) {
+      if (kw.distanceTo(origin) < 2.8) {
         const e = S.koopa; e.dead = true; e.t = 0; hit++; env.Audio.bossHit();
         env.Particles.spawn(kw, 0x7fe08a, 18, 4);
       }
@@ -925,7 +944,7 @@ const WindGardens = (() => {
 
   return {
     configure, shapeGround, exitDir, build, attach, reset, update, query, drift, constrain,
-    punchHit, scripted, objective, debug, colliders, cameraHint,
+    punchHit, aim, scripted, objective, debug, colliders, cameraHint,
     respawn: (P, hooks, restoreHealth) => respawn(P, hooks, restoreHealth),
     isLocked: () => S.locked,
     get layout() { return LAYOUT; }
