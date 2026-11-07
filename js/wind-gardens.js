@@ -131,18 +131,26 @@ const WindGardens = (() => {
     return d.multiplyScalar(wind.strength * TUNE.wind.drift * (grounded ? 0.5 : 1));
   }
 
+  // The canyon gets its own fine mesh (the planet sphere is ~4 units per triangle, which turned
+  // the 4 unit wide canyon walls into teeth). The strip covers s0..s1 and |l| < maxL; the coarse
+  // sphere is pushed under it in hide0..hide1, |l| < hideL, with a margin larger than one coarse
+  // triangle so no gap shows at the seam.
+  const CANYON_STRIP = { s0: 68, s1: 130, maxL: 165, hide0: 72.5, hide1: 125.5, hideL: 155, ds: 0.5, rows: 131 };
+
   // ---- terrain mesh shaping + painting ----
   function shapeGround(geo) {
     const pos = geo.attributes.position, v = new V3();
     for (let i = 0; i < pos.count; i++) {
       v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
       const c = coordsOf(v);
-      v.multiplyScalar(R + terrainH(c.s, c.l));
+      // inside the detailed canyon strip the coarse sphere sinks out of sight (see buildCanyon)
+      const hidden = FX.canyon && c.s > CANYON_STRIP.hide0 && c.s < CANYON_STRIP.hide1 && Math.abs(c.l) < CANYON_STRIP.hideL;
+      v.multiplyScalar(R + (hidden ? -45 : terrainH(c.s, c.l)));
       pos.setXYZ(i, v.x, v.y, v.z);
     }
     pos.needsUpdate = true;
     const col = geo.attributes.color, tmp = new THREE.Color(), cen = new V3(), rr = (() => { let sd = 5; return () => (sd = (sd * 16807) % 2147483647) / 2147483647; })();
-    const dirt = new THREE.Color(0xe3bd68), rock = new THREE.Color(0x76655a), deep = new THREE.Color(0x3b3550), net = new THREE.Color(0xb78b52), plaza = new THREE.Color(0x92d874);
+    const dirt = new THREE.Color(0xeac67e), rock = new THREE.Color(0x76655a), deep = new THREE.Color(0x3b3550), net = new THREE.Color(0xb78b52), plaza = new THREE.Color(0x92d874);
     for (let i = 0; i < pos.count; i += 3) {
       cen.set(0, 0, 0);
       for (let k = 0; k < 3; k++) cen.x += pos.getX(i + k), cen.y += pos.getY(i + k), cen.z += pos.getZ(i + k);
@@ -191,11 +199,13 @@ const WindGardens = (() => {
     return g;
   }
 
+  const sails = [];          // cloth that billows with GameShared.wind
+  let windowMat = null;      // tower windows, lit at night
   function makeBlade(index, isLadder) {
     const L = mill.bladeLen;
     const g = new THREE.Group();
     const wood = 0x8a5a3b;
-    add(g, box(0.5, L, 0.35, wood), 0, L / 2, 0);                       // spar
+    add(g, box(0.55, L, 0.4, wood), 0, L / 2, 0);                       // spar
     if (isLadder) {
       const railM = 0x9b6a42;
       add(g, box(0.18, L, 0.3, railM), -0.9, L / 2, 0.05);
@@ -204,15 +214,52 @@ const WindGardens = (() => {
         const rung = add(g, box(1.9, 0.2, 0.3, 0xffd36a, { emissive: 0xffa020, emissiveIntensity: 0.35 }), 0, y, 0.08);
         ladderGlow.push(rung);
       }
-    } else {
+      if (FX.windmill) {               // a red pennant at the tip: the one blade without a sail
+        const geo = new THREE.PlaneGeometry(1.8, 0.8, 6, 1); geo.translate(0.9, 0, 0);
+        const pen = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xe8402e, emissive: 0x501008, side: THREE.DoubleSide, roughness: 0.8 }));
+        pen.position.set(0.3, L - 0.2, 0.1);
+        g.add(pen);
+        sails.push({ cloth: pen, base: geo.attributes.position.array.slice(), phase: 0.3, pennant: true });
+      }
+    } else if (!FX.windmill) {
       const sailC = [0xf4efe2, 0xf0e4c8, 0xe9ddc0][index % 3];
       for (let k = 0; k < 3; k++) {
         const sail = add(g, box(3.6, 3.4, 0.12, sailC), 2.1, 4.2 + k * 4.8, 0);
         sail.rotation.x = 0.05;
         add(g, box(0.18, 3.5, 0.2, wood), 0.35, 4.2 + k * 4.8, 0);
       }
+    } else {
+      // a lattice frame with one long cloth sail: a broad, readable silhouette from across the canyon
+      const y0 = 2.4, y1 = L - 0.3, len = y1 - y0, frame = 0x6b4b34;
+      add(g, box(0.18, len, 0.18, frame), 4.3, (y0 + y1) / 2, 0);
+      for (let y = y0; y <= y1 + 0.01; y += len / 9) add(g, box(4.4, 0.13, 0.15, frame), 2.2, y, 0);
+      const sailC = [0xf6f0e2, 0xf2e6cc, 0xece0c4][index % 3];
+      const geo = new THREE.PlaneGeometry(3.7, len - 0.2, 4, 12);
+      const cloth = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: sailC, side: THREE.DoubleSide, roughness: 0.9 }));
+      cloth.position.set(2.3, (y0 + y1) / 2, -0.14);
+      g.add(cloth);
+      sails.push({ cloth, base: geo.attributes.position.array.slice(), phase: index * 1.7, half: 1.85, len });
     }
     return g;
+  }
+
+  // sails bulge with the wind strength and ripple; the pennant streams like the flags
+  function updateSails(t) {
+    const w = wind.strength;
+    for (const sl of sails) {
+      const a = sl.cloth.geometry.attributes.position, base = sl.base;
+      for (let i = 0; i < a.count; i++) {
+        const x = base[i * 3], y = base[i * 3 + 1];
+        let z;
+        if (sl.pennant) z = Math.sin(t * (4 + w * 4) - x * 3 + sl.phase) * 0.18 * (x / 1.8) * (0.4 + w);
+        else {
+          const across = 1 - Math.pow(x / sl.half, 2), along = Math.cos(y / sl.len * Math.PI);
+          z = -(0.25 + 0.35 * w) * across * along + 0.05 * w * Math.sin(t * 5 + y * 0.7 + sl.phase) * across;
+        }
+        a.setZ(i, z);
+      }
+      a.needsUpdate = true;
+    }
   }
 
   function makeLuigi() {
@@ -298,7 +345,130 @@ const WindGardens = (() => {
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(1.5, 20),
       new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false }));
     shadow.scale.set(1, 0.7, 1);
-    return { g, body, wings, shadow };
+    // a faint warm ring around the shadow, so the dive mark still reads on dark ground at night
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.32, 1.6, 28),
+      new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    ring.position.z = 0.01;
+    shadow.add(ring);
+    return { g, body, wings, shadow, ring };
+  }
+
+  // ---------- canyon strip: fine mesh, strata colours, darker and bluer with depth ----------
+  function buildCanyon() {
+    const cs = CANYON_STRIP, cols = Math.round((cs.s1 - cs.s0) / cs.ds) + 1, rows = cs.rows;
+    const pos = new Float32Array(cols * rows * 3), colA = new Float32Array(cols * rows * 3);
+    const strata = [0xe0b07a, 0xc8845a, 0xe8c896, 0xb06a4e, 0xd6a072, 0x9a6050, 0xcc9468].map(h => new THREE.Color(h));
+    const haze = new THREE.Color(0x4a4778), dirt = new THREE.Color(0xeac67e), c = new THREE.Color(), v = new V3();
+    let n = 0;
+    for (let j = 0; j < rows; j++) {
+      const u = j / (rows - 1) * 2 - 1;
+      const l = Math.sign(u) * Math.pow(Math.abs(u), 1.5) * cs.maxL;   // finer near the route
+      for (let i = 0; i < cols; i++, n++) {
+        const s = cs.s0 + i * cs.ds;
+        const h = terrainH(s, l);
+        localPos(s, l, h).toArray(pos, n * 3);
+        const depth = -h;
+        if (depth < 0.25) {
+          if (Math.abs(l) < 3.2) c.copy(dirt); else H.tint(dirAt(s, l, v), c);
+        } else {
+          const wob = depth + 0.7 * Math.sin(l * 0.11 + s * 0.35) + 0.4 * Math.sin(l * 0.37);
+          const band = Math.floor(wob / 2.3);
+          c.copy(strata[((band % strata.length) + strata.length) % strata.length]);
+          c.multiplyScalar(0.92 + 0.08 * Math.sin(l * 0.9 + band));
+          c.lerp(haze, Math.pow(Math.min(1, depth / LAYOUT.canyon.depth), 1.3) * 0.72);  // depth haze
+        }
+        c.toArray(colA, n * 3);
+      }
+    }
+    const idx = [];
+    for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
+      const a = j * cols + i, b = a + 1, d = a + cols, e = d + 1;
+      idx.push(a, d, b, b, d, e);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colA, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    // keep the winding facing outward (normals point away from the planet centre)
+    const nrm = geo.attributes.normal;
+    if (nrm.getX(0) * pos[0] + nrm.getY(0) * pos[1] + nrm.getZ(0) * pos[2] < 0) {
+      for (let k = 0; k < idx.length; k += 3) { const t = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = t; }
+      geo.setIndex(idx); geo.computeVertexNormals();
+    }
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    group.add(m);
+  }
+
+  // ---------- small lights that mark edges, brighter as night falls ----------
+  const markers = [];
+  let markerMat = null, markerHalo = null;
+  function addMarker(s, l, h, post) {
+    const g = new THREE.Group();
+    if (post) add(g, cyl(0.07, 0.09, post, 6, 0x5a4030), 0, post / 2, 0);
+    add(g, new THREE.Mesh(markerGeo, markerMat), 0, (post || 0) + 0.12, 0);
+    add(g, new THREE.Mesh(haloGeo, markerHalo), 0, (post || 0) + 0.12, 0);
+    group.add(put(g, s, l, h));
+    markers.push(g);
+  }
+  let markerGeo = null, haloGeo = null;
+  function buildMarkers() {
+    markerGeo = new THREE.SphereGeometry(0.2, 10, 8);
+    haloGeo = new THREE.SphereGeometry(0.8, 10, 8);
+    markerMat = new THREE.MeshStandardMaterial({ color: 0xffe6a8, emissive: 0xffb848, emissiveIntensity: 0.4, roughness: 0.4 });
+    markerHalo = new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const bh = bridgeHalf + 0.05;
+    // the two edges of the gap, and both ends of the bridge
+    for (const sx of [-1, 1]) {
+      addMarker(LAYOUT.bridgeA[1] - 0.15, sx * bh, plankTop + 1.5, 0);
+      addMarker(LAYOUT.bridgeB[0] + 0.15, sx * bh, plankTop + 1.5, 0);
+      addMarker(LAYOUT.bridgeA[0], sx * (bh + 0.5), 0, 1.2);
+      addMarker(LAYOUT.bridgeB[1], sx * (bh + 0.5), 0, 1.2);
+    }
+    // the training trench rim and the pedestal top
+    for (const sx of [-1, 1]) { addMarker(LAYOUT.trench.a - 1, sx * 4.2, 0, 0.9); addMarker(LAYOUT.trench.b + 1, sx * 4.2, 0, 0.9); }
+    for (const ss of [ped.s0 + 0.3, ped.s1 - 0.3]) for (const sx of [-1, 1]) addMarker(ss, sx * (ped.half - 0.3), ped.top + 0.15, 0);
+    // balcony corners and the lever stand
+    addMarker(bal.s0 + 0.2, bal.l1 - 0.2, bal.top + 1.2, 0);
+    addMarker(bal.s0 + 0.2, bal.l0 + 0.2, bal.top + 1.2, 0);
+    addMarker(LAYOUT.lever.s, LAYOUT.lever.l + 1.2, 0, 1.0);
+  }
+
+  // ---------- light-coloured stones along the path edges: the route reads in greyscale too ----------
+  function buildStones(rand) {
+    const geo = new THREE.DodecahedronGeometry(0.24, 0);
+    const mesh = new THREE.InstancedMesh(geo, H.mat(0xf2ead8), 260);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new V3(0, 1, 0), sc = new V3();
+    let n = 0;
+    const ranges = [[-12, 39], [47, 56], [67, 75.5], [123.5, 158]];
+    for (const [a, b] of ranges) for (let s = a; s <= b && n < 260; s += 2.1) for (const sx of [-1, 1]) {
+      const l = sx * (3.55 + rand() * 0.25), dir = dirAt(s + rand() * 0.6, l);
+      q.setFromUnitVectors(up, dir);
+      sc.set(1 + rand() * 0.4, 0.5 + rand() * 0.2, 1 + rand() * 0.4);
+      m.compose(dir.clone().multiplyScalar(R + terrainH(s, l) + 0.04), q, sc);
+      mesh.setMatrixAt(n++, m);
+    }
+    mesh.count = n; mesh.instanceMatrix.needsUpdate = true;
+    group.add(mesh);
+  }
+
+  // ---------- low-contrast floating islands far behind the route ----------
+  function buildIslands(rand) {
+    const rock = new THREE.MeshStandardMaterial({ color: 0x9d9aae, roughness: 1, flatShading: true });
+    const top = new THREE.MeshStandardMaterial({ color: 0xa8c8a0, roughness: 1, flatShading: true });
+    const leaf = new THREE.MeshStandardMaterial({ color: 0x8fb898, roughness: 1, flatShading: true });
+    for (let i = 0; i < 12; i++) {
+      const g = new THREE.Group();
+      const r = 5 + rand() * 9;
+      add(g, new THREE.Mesh(new THREE.ConeGeometry(r, r * 1.6, 7), rock), 0, -r * 0.8, 0).rotation.x = Math.PI;
+      add(g, new THREE.Mesh(new THREE.CylinderGeometry(r * 1.02, r, 1.2, 7), top), 0, 0.6, 0);
+      for (let k = 0; k < 3; k++) add(g, new THREE.Mesh(new THREE.IcosahedronGeometry(1.4 + rand() * 1.4, 0), leaf), (rand() - 0.5) * r, 2.2, (rand() - 0.5) * r);
+      g.rotation.y = rand() * 6;
+      const s = -40 + rand() * 300, l = (rand() < 0.5 ? -1 : 1) * (70 + rand() * 90);
+      const holder = new THREE.Group(); holder.add(g);
+      group.add(put(holder, s, l, 55 + rand() * 60));
+    }
   }
 
   function build(p, grp, helpers) {
@@ -398,6 +568,11 @@ const WindGardens = (() => {
       }
     }
 
+    if (FX.canyon) buildCanyon();
+    if (FX.markers) buildMarkers();
+    if (FX.stones) buildStones(rand);
+    if (FX.islands) buildIslands(rand);
+
     // ---------- windmill ----------
     const towerG = new THREE.Group();
     const tower = cyl(mill.towerR - 1.4, mill.towerR, mill.towerH, 14, 0xf0e2c0);
@@ -405,6 +580,18 @@ const WindGardens = (() => {
     const roof = new THREE.Mesh(new THREE.ConeGeometry(mill.towerR + 0.8, 7, 14), H.mat(0xb94c3a));
     roof.position.y = mill.towerH + 3.2; towerG.add(roof);
     for (let k = 0; k < 4; k++) add(towerG, box(0.4, mill.towerH, 0.5, 0x8a5a3b), Math.cos(k * 1.57) * (mill.towerR - 0.9), mill.towerH / 2, Math.sin(k * 1.57) * (mill.towerR - 0.9));
+    if (FX.windmill) {
+      // stone foot, a door and windows facing the route; the windows glow at night
+      add(towerG, cyl(mill.towerR + 0.5, mill.towerR + 0.9, 2.6, 14, 0x9a948a), 0, 1.3, 0);
+      const rAt = (y) => mill.towerR - 1.4 * (y / mill.towerH);
+      add(towerG, box(2.2, 3.6, 0.5, 0x5a3a22), 0, 2.6 + 1.8, rAt(4.4) + 0.05);
+      windowMat = new THREE.MeshStandardMaterial({ color: 0x3a3040, emissive: 0xffc060, emissiveIntensity: 0.1, roughness: 0.6 });
+      for (const [y, x] of [[10, -1.6], [15.5, 1.4], [21, -0.6]]) {
+        const win = add(towerG, new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.5, 0.4), windowMat), x, y, rAt(y) - 0.05);
+        win.rotation.y = Math.atan2(x, rAt(y));
+      }
+      add(towerG, new THREE.Mesh(new THREE.TorusGeometry(mill.towerR - 1.35, 0.25, 6, 20), H.mat(0x8a5a3b)), 0, mill.towerH - 0.2, 0).rotation.x = Math.PI / 2;
+    }
     group.add(put(towerG, mill.towerS, 0, 0));
     colliders.push(tower, roof);
 
@@ -473,7 +660,7 @@ const WindGardens = (() => {
   function angDiff(a, b) { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; }
 
   function reset() {
-    S.t = 0; S.rescueCount = 0;
+    S.t = 0; S.rescueCount = 0; S.splits = [];
     S.cp = 0;
     S.blades = { angle: 0.5, w: TUNE.mill.bladeSpeed, state: "spin", heldT: 0 };
     S.rescued = false; S.rescueT = 0; S.locked = false; S.climb = null;
@@ -769,6 +956,7 @@ const WindGardens = (() => {
   function startRescue(P, hooks) {
     if (S.rescued) return;
     S.rescued = true; S.rescueT = 0; S.rescueCount = (S.rescueCount || 0) + 1;
+    split("rescue");
     hooks.toast("Luigi!", 2400);
     hooks.hint("You found Luigi! Something with the letters DK rolled in below.", 7000);
     env.Audio.victory();
@@ -821,8 +1009,10 @@ const WindGardens = (() => {
     const ph = (t % 6);
     const on = ph < 1.0 || (ph > 1.5 && ph < 1.8) || (ph > 2.2 && ph < 2.5);
     const lit = S.rescued ? 0.25 : (on ? 1 : 0);
-    beam.material.opacity += ((on && !S.rescued ? 0.55 : (S.rescued ? 0.08 : 0)) - beam.material.opacity) * 0.35;
-    lanternGlow.material.opacity += (lit * 0.7 - lanternGlow.material.opacity) * 0.4;
+    const night = (GameShared.sky && GameShared.sky.night) || 0;   // the signal is at its best in the dark
+    beam.material.opacity += ((on && !S.rescued ? 0.55 + 0.35 * night : (S.rescued ? 0.08 : 0)) - beam.material.opacity) * 0.35;
+    lanternGlow.material.opacity += (lit * (0.7 + 0.3 * night) - lanternGlow.material.opacity) * 0.4;
+    lanternGlow.scale.setScalar(1 + 0.8 * night);
     luigi.bulb.material.opacity = 0.35 + lit * 0.65;
   }
 
@@ -859,11 +1049,18 @@ const WindGardens = (() => {
   }
 
   // ---- main update ----
+  // split times per route segment (game time, so pauses do not count): landing -> training ->
+  // bridge -> windmill -> rescue. Shown in the tuning panel for the child test (#8).
+  function split(name) {
+    if (S.splits.some(x => x.name === name)) return;
+    const prev = S.splits.length ? S.splits[S.splits.length - 1].t : 0;
+    S.splits.push({ name, t: S.t, seg: S.t - prev });
+  }
   function checkpointUpdate(P, ctx, s, l) {
     if (!ctx.grounded || s < -50) return;
     const cps = LAYOUT.checkpoints;
     for (let i = cps.length - 1; i > S.cp; i--) {
-      if (s >= cps[i].s && Math.abs(l) < 8 && ctx.heightOf(P) > -0.5 && s < cps[i].s + 30) { S.cp = i; break; }
+      if (s >= cps[i].s && Math.abs(l) < 8 && ctx.heightOf(P) > -0.5 && s < cps[i].s + 30) { S.cp = i; split(cps[i].name); break; }
     }
   }
   function respawn(P, hooks, hurtRestore) {
@@ -875,11 +1072,21 @@ const WindGardens = (() => {
     hooks.fade();
   }
 
+  // night: markers, tower windows, the koopa's ring and the ladder brighten as the light goes
+  function updateNight() {
+    const night = (GameShared.sky && GameShared.sky.night) || 0;
+    if (markerMat) { markerMat.emissiveIntensity = 0.4 + 1.6 * night; markerHalo.opacity = 0.04 + 0.4 * night; }
+    if (windowMat) windowMat.emissiveIntensity = 0.1 + 1.3 * night;
+    if (koopa && koopa.ring) koopa.ring.material.opacity = Math.min(1, koopa.shadow.material.opacity * (0.25 + 1.8 * night));
+  }
+
   function update(dt, ctx) {
     const P = ctx.P;
     S.t += dt;
     windAt(P.up, ctx.t);
     updateFlags(ctx.t);
+    updateSails(ctx.t);
+    updateNight();
     updateLantern(ctx.t);
     if (!S.locked) { updateGoomba(dt, P, ctx); updateKoopa(dt, P, ctx); }
     updateMill(dt, P, ctx);
@@ -951,6 +1158,18 @@ const WindGardens = (() => {
     return { floor: f, h };
   }
 
+  // Soft framing at the brake lever (issue #5 frame 3): lever low in the frame, the ladder blade in
+  // the middle and Luigi on the balcony, together. The follow camera backs off a few units and
+  // aims part of the way toward the hub; the player keeps yaw, pitch and zoom.
+  function cameraFocus(P) {
+    if (S.rescued || S.locked) return null;
+    const u = tmpV.copy(P.pos).sub(center).normalize();
+    const c = coordsOf(u);
+    if (c.s < 114 || c.s > 128.5 || Math.abs(c.l) > 15) return null;
+    const w = smooth(114, 118, c.s) * (1 - smooth(126, 128.5, c.s)) * (1 - smooth(11, 15, Math.abs(c.l)));
+    return { point: worldPos(mill.hubS, (bal.l0 + bal.l1) / 2, mill.hubH * 0.9), weight: w };
+  }
+
   // Fixed framings for the scripted parts of the mill. Returns { pos, look } in world space, or null.
   // Climb: from the front-left of the mill, below the hub, so neither the left blade nor the
   // tower can come between camera and Mario. Rescue: from the open end of the balcony,
@@ -987,6 +1206,7 @@ const WindGardens = (() => {
     mill: () => ({ angle: S.blades.angle, w: S.blades.w, state: S.blades.state, ladderOff: S.ladderOff, climbReady: S.climbReady }),
     setBladeAngle(a) { S.blades.angle = a; },
     get crateGone() { return !!crateSolid.gone; },
+    get splits() { return S.splits || []; },
     get rescueCount() { return S.rescueCount || 0; },
     get gateOpen() { return !!(planet && planet.gate && planet.gate.holder.visible); },
     get checkpoint() { return LAYOUT.checkpoints[S.cp].name; },
@@ -999,7 +1219,7 @@ const WindGardens = (() => {
 
   return {
     configure, shapeGround, exitDir, build, attach, reset, update, query, drift, constrain,
-    punchHit, aim, scripted, objective, debug, colliders, cameraHint, cameraFloor, cameraShot,
+    punchHit, aim, scripted, objective, debug, colliders, cameraHint, cameraFloor, cameraShot, cameraFocus,
     respawn: (P, hooks, restoreHealth) => respawn(P, hooks, restoreHealth),
     isLocked: () => S.locked,
     get layout() { return LAYOUT; }

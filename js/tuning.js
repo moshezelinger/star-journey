@@ -44,7 +44,7 @@ const TUNE_DEFAULTS = {
   },
   day: {
     length: 300,       // seconds for a full day and night (5 minutes)
-    startPhase: 0.0,   // 0 = morning, 0.25 = noon, 0.5 = dusk, 0.75 = midnight
+    startPhase: 0.0,   // fraction of a full cycle to skip at the start (0 = morning)
     morningHold: 0.35, // 0..0.9: how much the cycle lingers in daylight (0 = constant speed)
     nightDarkness: 0.78, // 0..1: how dark the night gets (1 = darkest allowed)
     minAmbient: 0.34   // lowest hemisphere light intensity, keeps the route readable at night
@@ -60,4 +60,16 @@ const TUNE = (() => {
   Object.defineProperty(t, "save", { value() { try { localStorage.setItem("sj-tune", JSON.stringify(t)); } catch (e) {} } });
   Object.defineProperty(t, "clear", { value() { try { localStorage.removeItem("sj-tune"); } catch (e) {} } });
   return t;
+})();
+
+/* Visual effects that can be switched off one by one, to measure what each costs:
+   index.html?fx=-canyon,-islands   (a leading minus turns that effect off).
+   Names: day, canyon, windmill, markers, islands, stones. */
+const FX = (() => {
+  const fx = { day: true, canyon: true, windmill: true, markers: true, islands: true, stones: true };
+  try {
+    const m = /[?&]fx=([^&]*)/.exec(location.search);
+    if (m) decodeURIComponent(m[1]).split(",").forEach(k => { k = k.trim(); if (k[0] === "-" && k.slice(1) in fx) fx[k.slice(1)] = false; });
+  } catch (e) {}
+  return fx;
 })();

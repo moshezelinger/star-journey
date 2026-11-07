@@ -3,6 +3,7 @@
   "private": true,
   "description": "Headless QA scripts for Wind Gardens. Run `npm install` here once, then `node <script>.js`.",
   "devDependencies": {
+    "sharp": "^0.35.5",
     "three": "0.128.0"
   }
 }
