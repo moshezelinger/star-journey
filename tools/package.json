@@ -1,0 +1,8 @@
+{
+  "name": "star-journey-tools",
+  "private": true,
+  "description": "Headless QA scripts for Wind Gardens. Run `npm install` here once, then `node <script>.js`.",
+  "devDependencies": {
+    "three": "0.128.0"
+  }
+}

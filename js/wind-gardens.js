@@ -25,7 +25,8 @@ const WindGardens = (() => {
   const LAYOUT = {
     trench: { a: 57, b: 66, depth: 3, ramp: 3.2 },
     canyon: { a: 80, b: 118, depth: 26, ramp: 4 },
-    bridgeA: [76, 95.5], bridgeB: [104.5, 123], bridgeHalf: 2.8, plankTop: 0.35,
+    // the gap is centred on s 100; its width comes from TUNE.bridge.gap (default 9)
+    bridgeA: [76, 100 - TUNE.bridge.gap / 2], bridgeB: [100 + TUNE.bridge.gap / 2, 123], bridgeHalf: 2.8, plankTop: 0.35,
     pedestal: { s0: 40, s1: 46, half: 3.5, top: 3.4 },
     crate: { s: 22, l: 0 },
     goomba: { s: 34, l: 7 }, koopa: { s: 50, l: -7 },
@@ -33,7 +34,7 @@ const WindGardens = (() => {
     mill: { hubS: 129.5, hubH: 22, bladeLen: 20, towerS: 139.5, towerR: 6, towerH: 26 },
     balcony: { s0: 131.2, s1: 135, l0: 2, l1: 10, top: 21.5 },
     cart: { s: 150, l: -12 }, gate: { s: 152, l: 0 },
-    voidBelow: -5, fallRespawn: -13, windS0: 60, windS1: 125, windScale: 0.65,
+    voidBelow: -5, fallRespawn: -13, windS0: 60, windS1: 125,   // wind drift strength: TUNE.wind.drift
     // named checkpoints for death and retry; position + facing come from level data
     checkpoints: [
       { name: "landing", s: 0, l: 0 },
@@ -88,6 +89,7 @@ const WindGardens = (() => {
   const ped = LAYOUT.pedestal;
   addSolid({ s0: ped.s0, s1: ped.s1, l0: -ped.half, l1: ped.half, bottom: 0, top: ped.top });
   const mill = LAYOUT.mill, bal = LAYOUT.balcony;
+  const LUIGI_SPOT = { s: bal.s1 - 1.0, l: 7.5 };   // deep in the balcony, clear of the tower (see balconyLanding)
   addSolid({ cs: mill.towerS, cl: 0, r: mill.towerR, bottom: -1, top: 60 });                        // tower
   addSolid({ s0: bal.s0, s1: bal.s1, l0: bal.l0, l1: bal.l1, bottom: bal.top - 1, top: bal.top });  // balcony floor
   const crateSolid = addSolid({ s0: LAYOUT.crate.s - 0.9, s1: LAYOUT.crate.s + 0.9, l0: -0.9, l1: 0.9, bottom: 0, top: 1.6 });
@@ -126,7 +128,7 @@ const WindGardens = (() => {
     const c = coordsOf(_u.copy(pos).sub(center).normalize());
     if (c.s < LAYOUT.windS0 || c.s > LAYOUT.windS1) return new V3();
     const d = GameShared.projectTangent(wind.direction, up);
-    return d.multiplyScalar(wind.strength * LAYOUT.windScale * (grounded ? 0.5 : 1));
+    return d.multiplyScalar(wind.strength * TUNE.wind.drift * (grounded ? 0.5 : 1));
   }
 
   // ---- terrain mesh shaping + painting ----
@@ -439,12 +441,12 @@ const WindGardens = (() => {
 
     // Luigi on the balcony + lantern beam
     luigi = makeLuigi();
-    group.add(put(luigi.g, (bal.s0 + bal.s1) / 2, 6, bal.top));
+    group.add(put(luigi.g, LUIGI_SPOT.s, LUIGI_SPOT.l, bal.top));
     luigi.base = luigi.g.quaternion.clone();
     beam = H.makeBeam(0xfff0b0, 90);
     beam.material.opacity = 0;
     beam.scale.set(2.5, 1, 2.5);
-    group.add(put(beam, (bal.s0 + bal.s1) / 2, 6, bal.top));
+    group.add(put(beam, LUIGI_SPOT.s, LUIGI_SPOT.l, bal.top));
 
     cart = makeCart();
     group.add(put(cart, LAYOUT.cart.s + 25, LAYOUT.cart.l, 0));
@@ -471,9 +473,9 @@ const WindGardens = (() => {
   function angDiff(a, b) { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; }
 
   function reset() {
-    S.t = 0;
+    S.t = 0; S.rescueCount = 0;
     S.cp = 0;
-    S.blades = { angle: 0.5, w: 0.65, state: "spin", heldT: 0 };
+    S.blades = { angle: 0.5, w: TUNE.mill.bladeSpeed, state: "spin", heldT: 0 };
     S.rescued = false; S.rescueT = 0; S.locked = false; S.climb = null;
     S.hints = {};
     S.fade = 0;
@@ -484,7 +486,7 @@ const WindGardens = (() => {
     initEnemies();
     if (cart) { cart.visible = false; put(cart, LAYOUT.cart.s + 25, LAYOUT.cart.l, 0); }
     if (planet && planet.gate) planet.gate.holder.visible = false;
-    if (luigi) { luigi.g.quaternion.copy(luigi.base); put(luigi.g, (bal.s0 + bal.s1) / 2, 6, bal.top); luigi.g.visible = true; luigi.g.scale.setScalar(1.15); }
+    if (luigi) { luigi.g.quaternion.copy(luigi.base); put(luigi.g, LUIGI_SPOT.s, LUIGI_SPOT.l, bal.top); luigi.g.visible = true; luigi.g.scale.setScalar(1.15); }
     ladderGlow.forEach(r => { r.material.emissiveIntensity = 0.35; });
   }
   function crateSolidReset() { crateSolid.gone = false; if (crateMesh) crateMesh.visible = true; }
@@ -535,19 +537,19 @@ const WindGardens = (() => {
       if (e.pos.distanceTo(e.anchor) > 3) e.pos.lerp(e.anchor, 0.05);
       snap(e.pos, 0);
       body.position.y = 0;
-      if (dist < 16 && Math.abs(ctx.heightOf(P) - 0) < 3) { e.state = "alert"; e.t = 0; env.Audio.tone(900, 0.2, "square", 0.1); }
+      if (dist < TUNE.goomba.sightRange && Math.abs(ctx.heightOf(P) - 0) < 3) { e.state = "alert"; e.t = 0; env.Audio.tone(900, 0.2, "square", 0.1); }
     } else if (e.state === "alert") {
       e.fwd.copy(toM); bang.visible = true; bang.position.y = 2.1 + Math.sin(e.t * 20) * 0.1;
       body.position.y = Math.abs(Math.sin(e.t * 10)) * 0.4;
-      if (e.t > 0.9) { e.state = "charge"; e.t = 0; e.dirLock.copy(toM); bang.visible = false; }
+      if (e.t > TUNE.goomba.warnTime) { e.state = "charge"; e.t = 0; e.dirLock.copy(toM); bang.visible = false; }
     } else if (e.state === "charge") {
       e.fwd.copy(e.dirLock);
-      e.pos.addScaledVector(e.dirLock, 9 * dt); snap(e.pos, 0);
+      e.pos.addScaledVector(e.dirLock, TUNE.goomba.chargeSpeed * dt); snap(e.pos, 0);
       body.position.y = Math.abs(Math.sin(e.t * 22)) * 0.18;
-      if (e.t > 1.7) { e.state = "recover"; e.t = 0; }
+      if (e.t > TUNE.goomba.chargeTime) { e.state = "recover"; e.t = 0; }
     } else if (e.state === "recover") {
       body.position.y = 0; body.rotation.z = Math.sin(e.t * 14) * 0.18;
-      if (e.t > 1.1) { body.rotation.z = 0; e.state = dist < 16 ? "alert" : "idle"; e.t = 0; }
+      if (e.t > TUNE.goomba.recoverTime) { body.rotation.z = 0; e.state = dist < TUNE.goomba.sightRange ? "alert" : "idle"; e.t = 0; }
     }
     const upN = e.pos.clone().normalize();
     goomba.g.position.copy(e.pos); faceObj(goomba.g, upN, GameShared.projectTangent(e.fwd, upN));
@@ -590,16 +592,16 @@ const WindGardens = (() => {
       e.pos.addScaledVector(fl, Math.min(dist, 6 * dt)); snap(e.pos, 0);
       e.fwd.copy(fl);
       sh.material.opacity += (0.35 - sh.material.opacity) * Math.min(1, dt * 6);
-      if (e.t > 1.6) { e.state = "lock"; e.t = 0; }
+      if (e.t > TUNE.koopa.trackTime) { e.state = "lock"; e.t = 0; }
       if (dist > 26) { e.state = "idle"; e.t = 0; }
     } else if (e.state === "lock") {      // shadow stops and flashes: the warning
       sh.material.opacity = 0.45 + 0.25 * Math.sin(e.t * 30);
       flap = 14;
-      if (e.t > 0.6) { e.state = "dive"; e.t = 0; }
+      if (e.t > TUNE.koopa.telegraphTime) { e.state = "dive"; e.t = 0; }
     } else if (e.state === "dive") {
-      e.h = Math.max(0.2, 6.5 * (1 - e.t / 0.28));
+      e.h = Math.max(0.2, 6.5 * (1 - e.t / TUNE.koopa.diveTime));
       flap = 2;
-      if (e.t >= 0.28) {
+      if (e.t >= TUNE.koopa.diveTime) {
         e.state = "grounded"; e.t = 0; e.h = 0.2;
         env.Particles.spawn(e.pos.clone().add(center).addScaledVector(up, 0.3), 0xffffff, 10, 2.5);
         if (dist < 1.9 && ctx.heightOf(P) < 1.6) ctx.hurt(mp.clone().sub(e.pos));
@@ -607,7 +609,7 @@ const WindGardens = (() => {
       }
     } else if (e.state === "grounded") {  // dazed on the ground: the safe moment to punch it
       sh.material.opacity *= 0.9; flap = 0;
-      if (e.t > 1.5) { e.state = "rise"; e.t = 0; }
+      if (e.t > TUNE.koopa.dazedTime) { e.state = "rise"; e.t = 0; }
     } else if (e.state === "rise") {
       e.h = Math.min(6.5, e.h + dt * 7);
       if (e.h >= 6.5) { e.state = "idle"; e.t = 0; }
@@ -690,14 +692,14 @@ const WindGardens = (() => {
   // ---- windmill ----
   function updateMill(dt, P, ctx) {
     const b = S.blades;
-    if (b.state === "spin") { b.w += (0.65 - b.w) * Math.min(1, dt * 1.2); }
+    if (b.state === "spin") { b.w += (TUNE.mill.bladeSpeed - b.w) * Math.min(1, dt * 1.2); }
     else if (b.state === "braking") {
       b.w *= Math.exp(-dt * 5);
       if (b.w < 0.01) {
         b.w = 0; b.state = "stopped"; b.heldT = 0;
         const d = Math.abs(angDiff(b.angle, Math.PI)) * 180 / Math.PI;       // ladder blade vs pointing straight down
         S.ladderOff = d;
-        if (d <= 22) {
+        if (d <= TUNE.mill.stopWindowDeg) {
           S.climbReady = true;
           ladderGlow.forEach(r => { r.material.emissiveIntensity = 1.4; });
           ctx.hint("The ladder blade stopped. Walk up to its glowing end.", 6000);
@@ -709,7 +711,7 @@ const WindGardens = (() => {
       }
     } else if (b.state === "stopped" && !S.climbReady) {
       b.heldT += dt;
-      if (b.heldT > 3.2) { b.state = "spin"; brake.engaged = false; b.w = 0.1; ctx.Audio.tone(300, 0.3, "sawtooth", 0.08, 160); }
+      if (b.heldT > TUNE.mill.brakeSlip) { b.state = "spin"; brake.engaged = false; b.w = 0.1; ctx.Audio.tone(300, 0.3, "sawtooth", 0.08, 160); }
     }
     b.angle += b.w * dt;
     for (const bl of blades) bl.g.rotation.z = -(b.angle + bl.index * Math.PI / 2);
@@ -731,6 +733,9 @@ const WindGardens = (() => {
     }
   }
 
+  // Mario lands near the open (blade) end of the balcony, Luigi stands deeper in; seen from
+  // the +l end both stay visible side by side instead of one hiding the other.
+  function balconyLanding() { return { s: bal.s0 + 0.9, l: bal.l0 + 1.4 }; }
   function climbPoint(c, k) {
     // 0..0.7 up the ladder blade; 0.7..1 hop onto the balcony
     const hubL = 0, hubH = mill.hubH;
@@ -740,7 +745,7 @@ const WindGardens = (() => {
       return { s: mill.hubS - 0.6, l: c.tipL * (1 - u) + hubL * u, h: c.tipH * (1 - u) + (hubH - 0.2) * u };
     }
     const u = smooth(0, 1, (k - 0.7) / 0.3), hop = Math.sin(u * Math.PI) * 1.6;
-    const bs = (bal.s0 + bal.s1) / 2, bl = (bal.l0 + bal.l1) / 2 - 1.2;
+    const land = balconyLanding(), bs = land.s, bl = land.l;
     return { s: mill.hubS - 0.6 + (bs - mill.hubS + 0.6) * u, l: hubL + (bl - hubL) * u, h: hubH - 0.2 + (bal.top - hubH + 0.2) * u + hop };
   }
   function scripted(dt, P, hooks) {
@@ -763,7 +768,7 @@ const WindGardens = (() => {
 
   function startRescue(P, hooks) {
     if (S.rescued) return;
-    S.rescued = true; S.rescueT = 0;
+    S.rescued = true; S.rescueT = 0; S.rescueCount = (S.rescueCount || 0) + 1;
     hooks.toast("Luigi!", 2400);
     hooks.hint("You found Luigi! Something with the letters DK rolled in below.", 7000);
     env.Audio.victory();
@@ -792,7 +797,7 @@ const WindGardens = (() => {
       luigi.g.position.y += 0;
     } else if (t < 5.4) {
       const k = smooth(0, 1, (t - 3.2) / 2.2);
-      const from = localPos((bal.s0 + bal.s1) / 2, 6, bal.top), to = localPos(LAYOUT.cart.s - 2, LAYOUT.cart.l + 3, 0);
+      const from = localPos(LUIGI_SPOT.s, LUIGI_SPOT.l, bal.top), to = localPos(LAYOUT.cart.s - 2, LAYOUT.cart.l + 3, 0);
       const mid = from.clone().lerp(to, k);
       const arc = Math.sin(k * Math.PI) * 6;
       luigi.g.position.copy(mid).addScaledVector(mid.clone().normalize(), arc);
@@ -915,12 +920,55 @@ const WindGardens = (() => {
     }
   }
 
-  // On the balcony the blades hang between a follow camera and Mario, so look along the balcony instead.
-  function cameraHint(P) {
+  // ---- camera support ----
+  // On the balcony the right-hand blade hangs between a camera in front of the mill and Mario,
+  // and the tower fills the space behind him. Look along the balcony from its open (+l) end,
+  // so the camera sits outside the blade plane and clear of the tower.
+  function onBalcony(P) {
     const u = tmpV.copy(P.pos).sub(center);
     const h = u.length() - R; u.normalize();
     const c = coordsOf(u);
-    if (h > bal.top - 1.5 && c.s > bal.s0 - 1 && c.s < bal.s1 + 1 && c.l > bal.l0 - 1.5 && c.l < bal.l1 + 1) return GameShared.projectTangent(B, u);
+    return h > bal.top - 1.5 && c.s > bal.s0 - 1 && c.s < bal.s1 + 1 && c.l > bal.l0 - 1.5 && c.l < bal.l1 + 1;
+  }
+  function cameraHint(P) {
+    if (!onBalcony(P)) return null;
+    return GameShared.projectTangent(B.clone().negate(), tmpV.copy(P.pos).sub(center).normalize());
+  }
+
+  // Height (above the base sphere) of the first surface under a world point, for the camera.
+  // Terrain comes from terrainH, the same function the mesh and the physics use. A solid counts
+  // when the point is not below its underside (so the space under the balcony stays free).
+  const _cu = new V3();
+  function cameraFloor(pos) {
+    _cu.copy(pos).sub(center);
+    const h = _cu.length() - R; _cu.normalize();
+    const c = coordsOf(_cu);
+    let f = terrainH(c.s, c.l);
+    for (const o of solids) {
+      if (o.gone || h < o.bottom - 0.3 || !inFoot(o, c.s, c.l)) continue;
+      if (o.top > f) f = o.top;
+    }
+    return { floor: f, h };
+  }
+
+  // Fixed framings for the scripted parts of the mill. Returns { pos, look } in world space, or null.
+  // Climb: from the front-left of the mill, below the hub, so neither the left blade nor the
+  // tower can come between camera and Mario. Rescue: from the open end of the balcony,
+  // on the tower side of the blade plane, looking back across Mario to Luigi.
+  function cameraShot(P) {
+    const ph = P.pos.distanceTo(center) - R;
+    if (S.locked && S.climb) {
+      const k = clamp(S.climb.t / S.climb.dur, 0, 1);
+      if (k < 0.7) {
+        const camH = clamp(ph + 2.5, 4, bal.top + 3);
+        return { pos: worldPos(mill.hubS - 13, -7, camH), look: P.pos.clone().addScaledVector(P.up, 0.9), kind: "climb" };
+      }
+    }
+    if ((S.locked && S.climb) || (S.rescued && S.rescueT < 5.6 && onBalcony(P))) {
+      const land = balconyLanding();
+      return { pos: worldPos(bal.s0 + 0.4, bal.l1 + 6, bal.top + 4.8),
+        look: worldPos(land.s + (LUIGI_SPOT.s - land.s) * 0.4, land.l + (LUIGI_SPOT.l - land.l) * 0.4, bal.top + 1.0), kind: "rescue" };
+    }
     return null;
   }
 
@@ -937,14 +985,21 @@ const WindGardens = (() => {
     worldPos, query, dirAt,
     get enemies() { return { goomba: S.goomba, koopa: S.koopa }; },
     mill: () => ({ angle: S.blades.angle, w: S.blades.w, state: S.blades.state, ladderOff: S.ladderOff, climbReady: S.climbReady }),
-    setBladeAngle(a) { S.blades.angle = a; }
+    setBladeAngle(a) { S.blades.angle = a; },
+    get crateGone() { return !!crateSolid.gone; },
+    get rescueCount() { return S.rescueCount || 0; },
+    get gateOpen() { return !!(planet && planet.gate && planet.gate.holder.visible); },
+    get checkpoint() { return LAYOUT.checkpoints[S.cp].name; },
+    leverPos() { return lever.g.position.clone().add(center); },
+    bladeBase() { const th = S.blades.angle; return worldPos(mill.hubS - 0.6, mill.bladeLen * Math.sin(th), 0); },
+    cameraShot: (P) => cameraShot(P)
   };
 
   function attach(e) { env = e; reset(); }
 
   return {
     configure, shapeGround, exitDir, build, attach, reset, update, query, drift, constrain,
-    punchHit, aim, scripted, objective, debug, colliders, cameraHint,
+    punchHit, aim, scripted, objective, debug, colliders, cameraHint, cameraFloor, cameraShot,
     respawn: (P, hooks, restoreHealth) => respawn(P, hooks, restoreHealth),
     isLocked: () => S.locked,
     get layout() { return LAYOUT; }
