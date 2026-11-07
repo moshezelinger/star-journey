@@ -166,8 +166,10 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="js/shared.js"></script>
 <script>
 "use strict";
+const { surfaceUp, nearestPlanet, projectTangent } = GameShared;
 
 /* ============================================================
    Little Star Journey - original mini platformer with spherical
@@ -1368,25 +1370,6 @@ window.addEventListener("mousemove", e => {
 });
 
 // ---------- helpers ----------
-function surfaceUp(pos, planet) {
-  return new THREE.Vector3().subVectors(pos, planet.center).normalize();
-}
-function nearestPlanet(pos) {
-  let best = planets[0], bestD = Infinity;
-  for (const p of planets) {
-    const d = pos.distanceTo(p.center) - p.radius;
-    if (d < bestD) { bestD = d; best = p; }
-  }
-  return best;
-}
-function projectTangent(v, up) {
-  const out = v.clone().addScaledVector(up, -v.dot(up));
-  if (out.lengthSq() < 1e-6) {
-    const alt = Math.abs(up.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-    out.copy(alt.addScaledVector(up, -alt.dot(up)));
-  }
-  return out.normalize();
-}
 function orientPlayer(up, forward, t) {
   const f = projectTangent(forward, up);
   const bx = new THREE.Vector3().crossVectors(up, f).normalize();
@@ -1500,7 +1483,7 @@ function updatePlaying(dt) {
     yawInput = 0;
   }
 
-  const planet = nearestPlanet(P.pos);
+  const planet = nearestPlanet(P.pos, planets);
   if (planet !== active && state === S.PLAYING) {
     active = planet;
     activeIndex = planets.indexOf(planet);
