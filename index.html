@@ -193,7 +193,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="js/shared.js"></script>
+<script src="js/tuning.js"></script>
+<script src="js/day-cycle.js"></script>
 <script src="js/wind-gardens.js"></script>
+<script src="js/tune-panel.js"></script>
 <script>
 "use strict";
 const { surfaceUp, nearestPlanet, projectTangent } = GameShared;
@@ -339,7 +342,10 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-scene.add(new THREE.HemisphereLight(0xbcd8ff, 0x231b3a, 0.85));
+const hemi = new THREE.HemisphereLight(0xbcd8ff, 0x231b3a, 0.85);
+scene.add(hemi);
+// Depth haze. Its colour and range follow the day cycle; off (out of range) away from Wind Gardens.
+scene.fog = new THREE.Fog(0x05060f, 1e6, 1e6 + 1);
 const sun = new THREE.DirectionalLight(0xfff1d0, 1.05);
 sun.position.set(60, 90, 40);
 scene.add(sun);
@@ -358,12 +364,18 @@ let starfield = null;
     pos[i * 3] = d.x; pos[i * 3 + 1] = d.y; pos[i * 3 + 2] = d.z;
   }
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  const m = new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0.9 });
+  const m = new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0.9, fog: false });
   const stars = new THREE.Points(g, m);
   stars.frustumCulled = false;
   scene.add(stars);
   starfield = stars;
 })();
+// the sun itself, a disc that follows the camera far away along the sun direction
+const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(70, 20, 12),
+  new THREE.MeshBasicMaterial({ color: 0xfff1d0, fog: false, depthWrite: false }));
+sunDisc.frustumCulled = false; sunDisc.renderOrder = -1;
+scene.add(sunDisc);
+DayCycle.attach({ scene, sun, hemi, rim, stars: starfield, sunDisc });
 
 // ---------- shared materials ----------
 const MAT = {
@@ -382,7 +394,7 @@ function mat(color, opts) {
 const PLANET_DEFS = [
   {
     name: "Wind Gardens", center: new THREE.Vector3(0, 0, 0), radius: 22 * WORLD_SCALE, gravity: 24, detail: 60,
-    ground: 0x82d46c, low: 0x5fb85c, key: 220, theme: "wind", hearts: true, spawnDir: new THREE.Vector3(0, 1, 0.2)
+    ground: 0x76c862, low: 0x58ad54, key: 220, theme: "wind", hearts: true, spawnDir: new THREE.Vector3(0, 1, 0.2)
   },
   {
     name: "Crystal Planet", center: new THREE.Vector3(74, 16, -46).multiplyScalar(WORLD_SCALE), radius: 8 * WORLD_SCALE, gravity: 24,
@@ -452,31 +464,38 @@ function scatter(group, rand, radius, count, parts, opts) {
 function makeBeam(color, height) {
   const beam = new THREE.Mesh(
     new THREE.CylinderGeometry(0.32, 0.32, height, 8, 1, true),
-    new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
   beam.position.y = height / 2;
   return beam;
 }
 
 // Big soft patches of the planet's two colors, one flat color per face, so a
 // wide surface reads as terrain instead of a single washed-out color.
+function groundTint(def, index, rand) {
+  const hi = new THREE.Color(def.ground), lo = new THREE.Color(def.low);
+  rand = rand || rng(500 + index * 13);
+  const f = def.radius / 14; // patch size ~ a dozen units, independent of planet size
+  const ph = [rand() * 6.28, rand() * 6.28, rand() * 6.28];
+  // colour of the ground at a unit direction (before the per-face jitter)
+  return (v, c) => {
+    const n = Math.sin(v.x * f + ph[0]) * Math.sin(v.y * f * 0.8 + ph[1])
+            + 0.6 * Math.sin((v.y + v.z) * f * 1.7 + ph[2])
+            + 0.35 * Math.sin((v.x - v.z) * f * 3.1);
+    const t = clamp(0.5 + n * 0.32, 0, 1);
+    return c.copy(hi).lerp(lo, t * 0.75);
+  };
+}
 function paintGround(geo, def, index) {
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
-  const hi = new THREE.Color(def.ground), lo = new THREE.Color(def.low), c = new THREE.Color();
-  const rand = rng(500 + index * 13);
-  const f = def.radius / 14; // patch size ~ a dozen units, independent of planet size
-  const ph = [rand() * 6.28, rand() * 6.28, rand() * 6.28];
+  const rand = rng(500 + index * 13);                  // same sequence as before: 3 phases, then the jitter
+  const tint = groundTint(def, index, rand), c = new THREE.Color();
   const v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i += 3) {
     v.set(0, 0, 0);
     for (let k = 0; k < 3; k++) v.x += pos.getX(i + k), v.y += pos.getY(i + k), v.z += pos.getZ(i + k);
     v.normalize();
-    const n = Math.sin(v.x * f + ph[0]) * Math.sin(v.y * f * 0.8 + ph[1])
-            + 0.6 * Math.sin((v.y + v.z) * f * 1.7 + ph[2])
-            + 0.35 * Math.sin((v.x - v.z) * f * 3.1);
-    const t = clamp(0.5 + n * 0.32, 0, 1);
-    c.copy(hi).lerp(lo, t * 0.75);
-    c.multiplyScalar(0.94 + rand() * 0.1);
+    tint(v, c).multiplyScalar(0.94 + rand() * 0.1);
     for (let k = 0; k < 3; k++) colors.set([c.r, c.g, c.b], (i + k) * 3);
   }
   geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
@@ -524,7 +543,7 @@ function buildPlanet(def, index) {
 
   // ---- decorations per theme ----
   if (def.theme === "wind") {
-    WindGardens.build(p, group, { mat: mat, rng: rng, makeBeam: makeBeam });
+    WindGardens.build(p, group, { mat: mat, rng: rng, makeBeam: makeBeam, tint: groundTint(def, index) });
   }
 
   if (def.theme === "meadow") {
@@ -650,6 +669,10 @@ function buildPlanet(def, index) {
   return p;
 }
 PLANET_DEFS.forEach(buildPlanet);
+{ // the sun turns over the middle of the route (s = 70)
+  const mid = WindGardens.debug.dirAt(70, 0), ahead = WindGardens.debug.dirAt(71, 0);
+  DayCycle.configure(mid, ahead.sub(mid));
+}
 
 // ---------- particles ----------
 const Particles = {
@@ -793,7 +816,7 @@ const PUNCH_ARM = { x: 1.5, y: 1.0 };   // shoulder offsets for the punch pose (
 
 // camera state
 let camDir = new THREE.Vector3(0, 0, 1);   // direction the camera looks, tangent to surface
-const CAM_DEFAULT = { zoom: 9.15, pitch: 0.38 };   // horizontal 8.5, height 3.4 like the original follow camera
+const CAM_DEFAULT = { get zoom() { return TUNE.camera.zoom; }, get pitch() { return TUNE.camera.pitch; } };   // js/tuning.js
 let camZoom = CAM_DEFAULT.zoom, camPitch = CAM_DEFAULT.pitch, camUp = new THREE.Vector3(0, 1, 0);
 let yawInput = 0, pitchInput = 0, zoomInput = 0, camLookAhead = 0;
 const camRay = new THREE.Raycaster();
@@ -1340,6 +1363,7 @@ function updateSoundLabels() {
 // ---------- input ----------
 const keys = {};
 window.addEventListener("keydown", e => {
+  if (TunePanel.owns(e.target)) return;           // typing in the tuning panel does not move Mario
   keys[e.code] = true;
   if (e.code === "Space") { e.preventDefault(); if (!e.repeat) jumpQueued = true; }
   if ((e.code === "KeyJ" || e.code === "KeyF" || e.code === "KeyK") && !e.repeat) punchQueued = true;
@@ -1376,6 +1400,7 @@ function stickEnd() {
 }
 
 document.addEventListener("touchstart", e => {
+  if (TunePanel.owns(e.target)) return;           // let the tuning panel's sliders scroll and slide
   if (state !== S.PLAYING && state !== S.TRANSITION) return;
   for (const t of e.changedTouches) {
     if (t.target === ui.hudSound || t.target === ui.camReset) return;
@@ -1390,6 +1415,7 @@ document.addEventListener("touchstart", e => {
 }, { passive: false });
 
 document.addEventListener("touchmove", e => {
+  if (TunePanel.owns(e.target)) return;
   for (const t of e.changedTouches) {
     if (stick.active && t.identifier === stick.id) stickMove(t.clientX, t.clientY);
     else if (t.identifier === look.id) {
@@ -1471,6 +1497,7 @@ function teleportPlayer(pos, forward) {
   camDir.copy(projectTangent(forward, up)); P.face.copy(camDir); camUp.copy(up);
   player.position.copy(pos); orientPlayer(up, camDir, 1);
   camera.position.copy(pos).addScaledVector(camDir, -camZoom * Math.cos(camPitch)).addScaledVector(up, camZoom * Math.sin(camPitch));
+  camFollow.copy(camera.position); camLift = 0;
 }
 let fadeTimer = null;
 function fadeFlash() {
@@ -1505,6 +1532,7 @@ function landOnPlanet(index, dirOverride) {
   P.airJumps = 1; P.punchT = 0; P.climbing = false;
   camDir.copy(projectTangent(new THREE.Vector3(0, 0, 1), P.up));
   camUp.copy(P.up);
+  camFollow.set(0, 0, 0); camLift = 0; camShotW = 0; camShotKind = null; camFocusW = 0;   // start the follow camera afresh
   player.position.copy(P.pos);
   orientPlayer(P.up, camDir, 1);
   Audio.setKey(active.def.key);
@@ -1514,12 +1542,9 @@ function landOnPlanet(index, dirOverride) {
   updateHud();
 }
 
-// Wind Gardens is a morning scene; every other planet keeps the night sky
-const SKY_NIGHT = new THREE.Color(0x05060f), SKY_MORNING = new THREE.Color(0x8cc9ee);
+// Wind Gardens runs the day and night cycle (js/day-cycle.js); every other planet and the menu keep the night sky
 function applySky() {
-  const morning = active.def.theme === "wind" && state !== S.MENU;
-  scene.background = morning ? SKY_MORNING : SKY_NIGHT;
-  starfield.visible = !morning;
+  DayCycle.setEnabled(active.def.theme === "wind" && state !== S.MENU);
 }
 function resetGame() {
   Particles.clear();
@@ -1532,6 +1557,7 @@ function resetGame() {
   transition = null;
   bossReset();
   WindGardens.reset();
+  DayCycle.reset();                       // restart begins in the morning again
   camZoom = CAM_DEFAULT.zoom; camPitch = CAM_DEFAULT.pitch;
   P.health = 3;
   P.invuln = 0;
@@ -1608,9 +1634,11 @@ function collectShard(s) {
 // ---------- main loop ----------
 function updatePlaying(dt) {
   // camera yaw from input
+  camYawIdle += dt;
   if (Math.abs(yawInput) > 0) {
     camDir.applyAxisAngle(P.up, -yawInput);
     yawInput = 0;
+    camYawIdle = 0;
   }
 
   const planet = nearestPlanet(P.pos, planets);
@@ -1622,13 +1650,15 @@ function updatePlaying(dt) {
   }
 
   const wg = active.def.theme === "wind" ? WindGardens : null;
+  if (wg) DayCycle.update(dt);         // only while playing, so pausing pauses the day
   if (wg && !wg.isLocked()) {          // on the balcony, swing the camera to the side of the blades
-    const hintDir = wg.cameraHint(P);
+    const hintDir = camYawIdle > 2 ? wg.cameraHint(P) : null;
     if (hintDir) camDir.lerp(hintDir, Math.min(1, dt * 2.5)).normalize();
   }
   if (wg && wg.isLocked()) {          // scripted ladder climb: no free movement
     wg.scripted(dt, P, wgEnv);
     jumpQueued = false; punchQueued = false;
+    player.visible = true;            // a damage blink must not freeze Mario invisible for the whole climb
     player.position.copy(P.pos);
     orientPlayer(P.up, P.face, 0.25);
     camDir.copy(projectTangent(camDir, P.up));
@@ -1702,7 +1732,8 @@ function updatePlaying(dt) {
     if (q.blocked) {                      // a wall: keep the height gained, undo the sideways step
       const keep = P.pos.distanceTo(active.center);
       P.pos.copy(active.center).addScaledVector(surfaceUp(prevPos, active), keep);
-      P.vel.copy(up).multiplyScalar(P.vel.dot(up));
+      const vUp = P.vel.dot(up);           // read before overwriting P.vel (it used to read up.up = 1)
+      P.vel.copy(up).multiplyScalar(vUp);
       q = wg.query(P.pos, prevH);
     }
     groundR = q.radius;
@@ -1888,33 +1919,111 @@ function updatePlaying(dt) {
   if (active.def.boss) updateBoss(dt);
 }
 
+// Camera floor: how high above the base sphere the first surface under `pos` is.
+// Wind Gardens answers from its real terrain (trench, canyon, planks, pedestal, balcony);
+// the other planets are plain spheres.
+function camFloorAt(pos) {
+  if (active.def.theme === "wind") return WindGardens.cameraFloor(pos);
+  return { floor: 0, h: pos.distanceTo(active.center) - active.radius };
+}
+// Fraction (0..1] of the segment a->b that is free of ground. Samples the segment and stops
+// at the first sample that sits closer than `margin` to the surface under it.
+const _camS = new THREE.Vector3();
+function camClearFraction(a, b, margin) {
+  const N = 14;
+  for (let i = 1; i <= N; i++) {
+    const k = i / N;
+    _camS.lerpVectors(a, b, k);
+    const f = camFloorAt(_camS);
+    if (f.h < f.floor + margin) return (i - 1) / N;
+  }
+  return 1;
+}
+// Pull a wanted camera position toward the look target until it is clear of the ground
+// and of the Wind Gardens solids. Never pushes it away from Mario.
+function camPullIn(target, want, margin) {
+  let blocked = false;
+  const dirv = want.clone().sub(target), len = dirv.length();
+  if (len < 1e-4) return false;
+  dirv.divideScalar(len);
+  let free = len * camClearFraction(target, want, margin);
+  if (free < len) blocked = true;
+  if (active.def.theme === "wind") {
+    camRay.set(target, dirv); camRay.far = len;
+    const hits = camRay.intersectObjects(WindGardens.colliders, true);
+    if (hits.length && hits[0].distance - 0.8 < free) { free = hits[0].distance - 0.8; blocked = true; }
+  }
+  if (blocked) want.copy(target).addScaledVector(dirv, Math.max(CAM_MIN_DIST, free));
+  return blocked;
+}
+
+const CAM_MIN_DIST = 1.4;
+const camFollow = new THREE.Vector3();    // smoothed follow position (before shots and shake)
+let camLift = 0;                           // extra pitch added while the ground blocks the view
+let camShotW = 0, camShotKind = null;      // blend weight toward a fixed shot (mill climb, rescue)
+const camShotPos = new THREE.Vector3(), camShotLook = new THREE.Vector3();
+let camYawIdle = 99;                       // seconds since the player last turned the camera
+let camFocusW = 0;                         // blend weight of the brake-lever framing
+const camFocusPt = new THREE.Vector3();
+
 function updateCameraFollow(dt, extra) {
   const up = P.up;
   camUp.lerp(up, Math.min(1, dt * 6)).normalize();
-  if (pitchInput) { camPitch = clamp(camPitch + pitchInput, 0.1, 1.15); pitchInput = 0; }
-  if (zoomInput) { camZoom = clamp(camZoom + zoomInput, 4.5, 16); zoomInput = 0; }
+  if (pitchInput) { camPitch = clamp(camPitch + pitchInput, TUNE.camera.pitchMin, TUNE.camera.pitchMax); pitchInput = 0; }
+  if (zoomInput) { camZoom = clamp(camZoom + zoomInput, TUNE.camera.zoomMin, TUNE.camera.zoomMax); zoomInput = 0; }
   // in the air, look a little ahead so the landing spot stays in frame
-  camLookAhead += ((P.grounded || state !== S.PLAYING ? 0 : 3.5) - camLookAhead) * Math.min(1, dt * 3);
-  const horiz = camZoom * Math.cos(camPitch) + (extra || 0), vert = camZoom * Math.sin(camPitch);
+  camLookAhead += ((P.grounded || state !== S.PLAYING ? 0 : TUNE.camera.lookAhead) - camLookAhead) * Math.min(1, dt * 3);
   const target = P.pos.clone().addScaledVector(up, 1.0);
-  const want = P.pos.clone()
-    .addScaledVector(camDir, -horiz)
-    .addScaledVector(up, vert);
-  // keep the camera outside the planet
-  const dc = want.distanceTo(active.center);
-  if (dc < active.radius + 1.6) {
-    want.copy(active.center).addScaledVector(want.clone().sub(active.center).normalize(), active.radius + 1.6);
+  // soft framing near the brake lever: back off and aim partly at the mill (WindGardens.cameraFocus)
+  const focus = (active.def.theme === "wind" && state === S.PLAYING) ? WindGardens.cameraFocus(P) : null;
+  camFocusW += ((focus ? focus.weight : 0) - camFocusW) * Math.min(1, dt * 1.8);
+  if (focus) camFocusPt.copy(focus.point);
+  const fe = camFocusW * camFocusW * (3 - 2 * camFocusW);
+  const back = fe * 8;
+  const wantAt = (pitch) => P.pos.clone()
+    .addScaledVector(camDir, -(camZoom * Math.cos(pitch) + (extra || 0) + back))
+    .addScaledVector(up, camZoom * Math.sin(pitch) + back * 0.25);
+
+  // When the ground hides Mario (trench walls, the canyon rim, low pitch), first try to lift the
+  // camera along its arc; whatever is still blocked after that is handled by pulling in.
+  let need = 0;
+  for (let k = 0; k <= 6; k++) {
+    const lift = k * 0.12;
+    if (camPitch + lift > TUNE.camera.pitchMax + 0.2) break;
+    need = lift;
+    if (camClearFraction(target, wantAt(camPitch + lift), 0.45) >= 1) break;
   }
-  // keep Mario visible: pull the camera in when the windmill wall is in the way
-  let blocked = false;
-  if (active.def.theme === "wind") {
-    const dirv = want.clone().sub(target), len = dirv.length();
-    dirv.normalize();
-    camRay.set(target, dirv); camRay.far = len;
-    const hits = camRay.intersectObjects(WindGardens.colliders, true);
-    if (hits.length) { want.copy(target).addScaledVector(dirv, Math.max(1.4, hits[0].distance - 0.6)); blocked = true; }
+  camLift += (need - camLift) * Math.min(1, dt * (need > camLift ? 6 : 1.5));
+  const want = wantAt(camPitch + camLift);
+  const blocked = camPullIn(target, want, 0.45);
+  if (camFollow.lengthSq() === 0) camFollow.copy(camera.position);
+  camFollow.lerp(want, blocked ? 1 : Math.min(1, dt * 5.5));
+  // smoothing must not let the camera trail further away than the zoom allows
+  const maxDist = camZoom + (extra || 0) + back * 1.04;   // the lever framing is the one allowed exception
+  const away = camFollow.distanceTo(P.pos);
+  if (away > maxDist) camFollow.sub(P.pos).multiplyScalar(maxDist / away).add(P.pos);
+  // the smoothed position may still trail inside a wall or under the ground: pull that in as well
+  camPullIn(target, camFollow, 0.3);
+
+  // fixed shots for the mill climb and the rescue, with a smooth hand-back to the player
+  const shot = (active.def.theme === "wind" && state === S.PLAYING) ? WindGardens.cameraShot(P) : null;
+  if (shot) { camShotPos.copy(shot.pos); camShotLook.copy(shot.look); camShotKind = shot.kind; }
+  else if (camShotKind) {
+    // hand back from where the camera is now, so the follow camera does not swing around
+    const back = projectTangent(P.pos.clone().sub(camera.position), up);
+    if (back.lengthSq() > 0.5) camDir.copy(back);
+    camShotKind = null;
   }
-  camera.position.lerp(want, blocked ? 1 : Math.min(1, dt * 5.5));
+  camShotW = clamp(camShotW + (shot ? dt / 0.7 : -dt / 1.3), 0, 1);
+  const e = camShotW * camShotW * (3 - 2 * camShotW);
+  const look = target.clone().addScaledVector(camDir, camLookAhead);
+  if (fe > 0.001) look.lerp(camFocusPt, 0.4 * fe);
+  if (e > 0) {
+    camera.position.lerpVectors(camFollow, camShotPos, e);
+    look.lerp(camShotLook, e);
+    camPullIn(look, camera.position, 0.3);
+  } else camera.position.copy(camFollow);
+
   if (camShake > 0) {
     camera.position.x += (Math.random() - 0.5) * camShake;
     camera.position.y += (Math.random() - 0.5) * camShake;
@@ -1922,7 +2031,7 @@ function updateCameraFollow(dt, extra) {
     camShake = Math.max(0, camShake - dt * 1.6);
   }
   camera.up.copy(camUp);
-  camera.lookAt(target.addScaledVector(camDir, camLookAhead));
+  camera.lookAt(look);
 }
 
 function updateTransition(dt) {
@@ -2009,7 +2118,28 @@ function animate() {
   Particles.update(dt);
   Audio.update();
   starfield.position.copy(camera.position);
+  DayCycle.apply(camera);
+  heroNightGlow();
+  TunePanel.update();
   renderer.render(scene, camera);
+}
+
+// At night Mario's own textures glow faintly (emissive = his texture), so he stays readable
+// against the dark ground without adding a second light.
+let heroMats = null;
+function heroNightGlow() {
+  if (!player.userData.ready) return;
+  if (!heroMats) {
+    heroMats = [];
+    player.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
+      if (!m.emissive || heroMats.includes(m)) return;
+      if (m.map) { m.emissiveMap = m.map; m.emissive.setHex(0xffffff); } else m.emissive.copy(m.color);
+      m.emissiveIntensity = 0; m.needsUpdate = true; heroMats.push(m);
+    }); });
+  }
+  const night = (GameShared.sky && GameShared.sky.night) || 0;
+  const k = active.def.theme === "wind" ? 0.28 * night : 0;
+  for (const m of heroMats) m.emissiveIntensity = k;
 }
 
 // ---------- buttons ----------
@@ -2037,7 +2167,20 @@ landOnPlanet(0);
 state = S.MENU;
 // test/QA access (see docs/wind-gardens.md)
 let dbgPause = false;
-window.__dbg = { P, camera, camDir, WindGardens, set pause(v) { dbgPause = v; }, step(n, dt) { for (let i = 0; i < n; i++) { if (state === S.PLAYING) { updatePlaying(dt || 1 / 60); updateCameraFollow(dt || 1 / 60, P.grounded ? 0 : 1.2); } Particles.update(dt || 1 / 60); } },  get state() { return state; }, get active() { return active; }, planets, jump() { jumpQueued = true; }, punch() { punchQueued = true; }, keys };
+window.__dbg = { P, camera, camDir, WindGardens, set pause(v) { dbgPause = v; },
+  get ready() { return !!player.userData.ready; },
+  // place the hero at route coordinates (s, l, height above the base sphere), facing +s
+  place(s, l, h, back) {
+    const wp = WindGardens.debug.worldPos(s, l || 0, h || 0);
+    teleportPlayer(wp, WindGardens.debug.worldPos(s + (back ? -5 : 5), l || 0, h || 0).sub(wp));
+    P.grounded = false;
+  },
+  get health() { return P.health; }, set health(v) { P.health = v; },
+  setInvuln(v) { P.invuln = v; },
+  setCam(pitch, zoom) { if (pitch !== undefined) camPitch = pitch; if (zoom !== undefined) camZoom = zoom; },
+  DayCycle,
+  get camFloor() { return camFloorAt(camera.position); },
+  get cam() { return { pitch: camPitch, zoom: camZoom, dist: camera.position.distanceTo(P.pos), h: camera.position.distanceTo(active.center) - active.radius }; }, step(n, dt) { for (let i = 0; i < n; i++) { if (state === S.PLAYING) { updatePlaying(dt || 1 / 60); updateCameraFollow(dt || 1 / 60, P.grounded ? 0 : 1.2); } Particles.update(dt || 1 / 60); } },  get state() { return state; }, get active() { return active; }, planets, jump() { jumpQueued = true; }, punch() { punchQueued = true; }, keys };
 animate();
 </script>
 </body>
