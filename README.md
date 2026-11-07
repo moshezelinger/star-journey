@@ -9,3 +9,12 @@
 ## תיעוד תהליך הבנייה
 
 צילומי מסך והסברים קצרים על בניית שלב גני הרוח: [docs/showcase](docs/showcase/README.md).
+
+## איך לשחק / How to play
+
+```
+python3 -m http.server 8765
+# http://localhost:8765/
+```
+
+מקשים / Controls: WASD, Space (פעמיים באוויר / twice in the air), J או F לאגרוף / punch, R לאיפוס מצלמה / reset camera. במגע: מקל שמאלי, כפתורי Jump ו־Punch.
