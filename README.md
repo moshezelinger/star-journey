@@ -1,4 +1,5 @@
-# Mario Galaxy: Following Luigi's Light
+# מסע בין כוכבים
+# Star Journey: Following the Lantern's Light
 
 A browser platformer on small round planets, built with Three.js and no build step. Star 1, **Wind Gardens**, is playable end to end: spot Luigi's lantern, learn to punch and double jump, cross a broken bridge in changing wind, and stop a windmill to rescue him.
 
@@ -36,4 +37,4 @@ python3 -m http.server 8765
 
 - Mario model: "Mario Movie (Super Mario Movie)" by Guilherme Navarro, CC-BY-4.0, [source](https://sketchfab.com/3d-models/mario-movie-super-mario-movie-13d05e3c76a148568decf1e8f25888f8).
 - Bowser model: "Bowser Super Mario Bros.1" by Vandacvi, CC-BY-4.0 (see `assets/bowser/license.txt`).
-- Unofficial, non-commercial fan project. Mario, Luigi, Bowser and related characters are trademarks of Nintendo. The code is not affiliated with or endorsed by Nintendo.
+- Inspired by the Super Mario games. Unofficial, non-commercial fan project. Mario, Luigi, Bowser and related characters are trademarks of Nintendo. The code is not affiliated with or endorsed by Nintendo.
