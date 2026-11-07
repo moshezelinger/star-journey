@@ -1,0 +1,933 @@
+"use strict";
+
+/* ============================================================
+   Wind Gardens - star 1 of Little Star Journey (issues #3-#6).
+   Route (arc length `s` along a great circle from the landing, `l` = lateral,
+   positive to Mario's right):
+     s -15..20   landing meadow, Luigi's lantern beam visible on the horizon
+     s  22       punch crate        s  34  goomba (alone, flat ground)
+     s  40..46   double-jump pedestal
+     s  50       winged koopa (alone, open meadow)
+     s  57..66   training trench with a rescue net (3 units deep, walkable out)
+     s  66..78   wind path with cloth flags
+     s  76..123  bridge over a canyon ring; 9-unit gap (needs the double jump)
+     s 124       brake lever        s 129.5 windmill blades   s 139.5 tower
+   Everything is built from primitives. Mario/Luigi GLBs are owned by #6.
+   Load order: Three.js, GameShared, this file, then the inline game script.
+   ============================================================ */
+const WindGardens = (() => {
+  const V3 = THREE.Vector3;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const smooth = (a, b, x) => { const k = clamp((x - a) / (b - a), 0, 1); return k * k * (3 - 2 * k); };
+  const band = (s, a, b, w) => smooth(a, a + w, s) * (1 - smooth(b - w, b, s));
+
+  // ---- layout (all arc lengths in world units) ----
+  const LAYOUT = {
+    trench: { a: 57, b: 66, depth: 3, ramp: 3.2 },
+    canyon: { a: 80, b: 118, depth: 26, ramp: 4 },
+    bridgeA: [76, 95.5], bridgeB: [104.5, 123], bridgeHalf: 2.8, plankTop: 0.35,
+    pedestal: { s0: 40, s1: 46, half: 3.5, top: 3.4 },
+    crate: { s: 22, l: 0 },
+    goomba: { s: 34, l: 7 }, koopa: { s: 50, l: -7 },
+    lever: { s: 124, l: -9 },
+    mill: { hubS: 129.5, hubH: 22, bladeLen: 20, towerS: 139.5, towerR: 6, towerH: 26 },
+    balcony: { s0: 131.2, s1: 135, l0: 2, l1: 10, top: 21.5 },
+    cart: { s: 150, l: -12 }, gate: { s: 152, l: 0 },
+    voidBelow: -5, fallRespawn: -13, windS0: 60, windS1: 125, windScale: 0.65,
+    // named checkpoints for death and retry; position + facing come from level data
+    checkpoints: [
+      { name: "landing", s: 0, l: 0 },
+      { name: "training", s: 54, l: 0 },
+      { name: "bridge", s: 74, l: 0 },
+      { name: "windmill", s: 125, l: -3 }
+    ]
+  };
+
+  // ---- sphere frame, set once from the planet definition ----
+  let R = 220, center = new V3(), N = new V3(0, 1, 0), T = new V3(0, 0, 1), B = new V3(1, 0, 0);
+  function configure(def) {
+    R = def.radius; center = def.center.clone();
+    N = def.spawnDir.clone().normalize();
+    T = GameShared.projectTangent(new V3(0, 0, 1), N);   // same heading the camera starts with
+    B = new V3().crossVectors(T, N).normalize();         // Mario's right
+  }
+  function dirAt(s, l, out) {
+    const a = s / R, c = l / R, ca = Math.cos(c);
+    return (out || new V3()).set(0, 0, 0)
+      .addScaledVector(N, Math.cos(a) * ca).addScaledVector(T, Math.sin(a) * ca).addScaledVector(B, Math.sin(c));
+  }
+  function coordsOf(dir) { // dir must be unit
+    return { s: Math.atan2(dir.dot(T), dir.dot(N)) * R, l: Math.asin(clamp(dir.dot(B), -1, 1)) * R };
+  }
+  function localPos(s, l, h) { return dirAt(s, l).multiplyScalar(R + (h || 0)); }           // relative to planet center
+  function worldPos(s, l, h) { return localPos(s, l, h).add(center); }
+  function frameAt(dir) { // right, up, forward(s+) at a surface direction
+    const f = GameShared.projectTangent(T, dir);
+    const r = new V3().crossVectors(f, dir).normalize();
+    return { r, u: dir, f };
+  }
+  function put(obj, s, l, h) { // local +X right, +Y up, +Z back toward the player
+    const dir = dirAt(s, l), fr = frameAt(dir);
+    obj.position.copy(dir).multiplyScalar(R + (h || 0));
+    obj.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(fr.r, fr.u, fr.f.clone().negate()));
+    return obj;
+  }
+
+  // ---- terrain: one function drives the mesh deformation and the physics ----
+  function terrainH(s, l) {
+    const tr = LAYOUT.trench, cn = LAYOUT.canyon;
+    return -tr.depth * band(s, tr.a, tr.b, tr.ramp) - cn.depth * band(s, cn.a, cn.b, cn.ramp);
+  }
+
+  // solid boxes: Mario stands on a top within step height, is blocked by a body that overlaps him
+  const solids = [];
+  function addSolid(o) { solids.push(o); return o; }
+  const bridgeHalf = LAYOUT.bridgeHalf, plankTop = LAYOUT.plankTop;
+  addSolid({ s0: LAYOUT.bridgeA[0], s1: LAYOUT.bridgeA[1], l0: -bridgeHalf, l1: bridgeHalf, bottom: 0, top: plankTop });
+  addSolid({ s0: LAYOUT.bridgeB[0], s1: LAYOUT.bridgeB[1], l0: -bridgeHalf, l1: bridgeHalf, bottom: 0, top: plankTop });
+  const ped = LAYOUT.pedestal;
+  addSolid({ s0: ped.s0, s1: ped.s1, l0: -ped.half, l1: ped.half, bottom: 0, top: ped.top });
+  const mill = LAYOUT.mill, bal = LAYOUT.balcony;
+  addSolid({ cs: mill.towerS, cl: 0, r: mill.towerR, bottom: -1, top: 60 });                        // tower
+  addSolid({ s0: bal.s0, s1: bal.s1, l0: bal.l0, l1: bal.l1, bottom: bal.top - 1, top: bal.top });  // balcony floor
+  const crateSolid = addSolid({ s0: LAYOUT.crate.s - 0.9, s1: LAYOUT.crate.s + 0.9, l0: -0.9, l1: 0.9, bottom: 0, top: 1.6 });
+  addSolid({ s0: LAYOUT.lever.s - 0.4, s1: LAYOUT.lever.s + 0.4, l0: LAYOUT.lever.l - 0.4, l1: LAYOUT.lever.l + 0.4, bottom: 0, top: 1.0 });
+
+  const STEP = 0.65;
+  function inFoot(o, s, l) {
+    if (o.r !== undefined) return Math.hypot(s - o.cs, l - o.cl) < o.r;
+    return s >= o.s0 && s <= o.s1 && l >= o.l0 && l <= o.l1;
+  }
+  // Ground under a world position. curH is Mario's height above the base sphere before this move.
+  const _u = new V3();
+  function query(pos, curH) {
+    _u.copy(pos).sub(center).normalize();
+    const c = coordsOf(_u);
+    let ground = terrainH(c.s, c.l), blocked = false;
+    let isVoid = ground < LAYOUT.voidBelow;
+    if (ground > curH + STEP) blocked = true;
+    for (const o of solids) {
+      if (o.gone || !inFoot(o, c.s, c.l)) continue;
+      if (o.top <= curH + STEP) { if (isVoid || o.top > ground) { ground = o.top; isVoid = false; } }
+      else if (o.bottom < curH + 1.6) blocked = true;
+    }
+    return { radius: isVoid ? -Infinity : R + ground, blocked, s: c.s, l: c.l, void: isVoid };
+  }
+
+  // ---- shared wind and brake (GameShared is the one source of truth) ----
+  const wind = GameShared.wind, brake = GameShared.brake;
+  function windAt(dir, t) {
+    const psi = 1.5 * Math.sin(0.28 * t);
+    const d = new V3().addScaledVector(B, Math.sin(psi)).addScaledVector(T, 0.5 * Math.cos(psi));
+    wind.direction.copy(GameShared.projectTangent(d, dir));
+    wind.strength = Math.max(0.15, 0.95 + 0.6 * Math.sin(0.6 * t) + 0.25 * Math.sin(1.9 * t));
+  }
+  function drift(pos, grounded, up) {
+    const c = coordsOf(_u.copy(pos).sub(center).normalize());
+    if (c.s < LAYOUT.windS0 || c.s > LAYOUT.windS1) return new V3();
+    const d = GameShared.projectTangent(wind.direction, up);
+    return d.multiplyScalar(wind.strength * LAYOUT.windScale * (grounded ? 0.5 : 1));
+  }
+
+  // ---- terrain mesh shaping + painting ----
+  function shapeGround(geo) {
+    const pos = geo.attributes.position, v = new V3();
+    for (let i = 0; i < pos.count; i++) {
+      v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
+      const c = coordsOf(v);
+      v.multiplyScalar(R + terrainH(c.s, c.l));
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    pos.needsUpdate = true;
+    const col = geo.attributes.color, tmp = new THREE.Color(), cen = new V3(), rr = (() => { let sd = 5; return () => (sd = (sd * 16807) % 2147483647) / 2147483647; })();
+    const dirt = new THREE.Color(0xe3bd68), rock = new THREE.Color(0x76655a), deep = new THREE.Color(0x3b3550), net = new THREE.Color(0xb78b52), plaza = new THREE.Color(0x92d874);
+    for (let i = 0; i < pos.count; i += 3) {
+      cen.set(0, 0, 0);
+      for (let k = 0; k < 3; k++) cen.x += pos.getX(i + k), cen.y += pos.getY(i + k), cen.z += pos.getZ(i + k);
+      cen.normalize();
+      const c = coordsOf(cen), h = terrainH(c.s, c.l);
+      let set = null;
+      if (h < -1.5) {
+        const k = clamp(-h / LAYOUT.canyon.depth, 0, 1);
+        if (-h > LAYOUT.trench.depth + 0.5) set = tmp.copy(rock).lerp(deep, k);
+        else set = tmp.copy(net);
+      } else if (h < -0.4) set = tmp.copy(net).lerp(rock, 0.2);
+      else if (Math.abs(c.l) < 3.2 && c.s > -14 && c.s < 160) set = tmp.copy(dirt);
+      else if (Math.abs(c.l) < 11 && c.s > 20 && c.s < 56) set = tmp.copy(plaza);
+      if (set) {
+        set.multiplyScalar(0.94 + rr() * 0.1);
+        for (let k = 0; k < 3; k++) col.setXYZ(i + k, set.r, set.g, set.b);
+      }
+    }
+    col.needsUpdate = true;
+  }
+  function exitDir() { return dirAt(LAYOUT.gate.s, LAYOUT.gate.l); }
+
+  // ============================================================
+  // build: static scenery, windmill, characters, enemies
+  // ============================================================
+  const S = {}; // runtime state, rebuilt by reset()
+  const colliders = [];  // meshes the camera must not hide Mario behind
+  let group = null, planet = null, H = null, env = null;
+  let flags = [], blades = [], ladderGlow = [], lever = null, luigi = null, cart = null, beam = null, lanternGlow = null;
+  let crateMesh = null, goomba = null, koopa = null, punchHint = null;
+
+  function box(w, h, d, color, opts) { return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), H.mat(color, opts)); }
+  function cyl(rt, rb, h, seg, color, opts) { return new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg || 10), H.mat(color, opts)); }
+  function add(parent, obj, x, y, z) { obj.position.set(x || 0, y || 0, z || 0); parent.add(obj); return obj; }
+
+  function makeFlag(s, l, h, height) {
+    const g = new THREE.Group();
+    add(g, cyl(0.07, 0.09, height, 6, 0x6b4b34), 0, height / 2, 0);
+    const hub = new THREE.Group(); hub.position.y = height - 0.8; g.add(hub);
+    const geo = new THREE.PlaneGeometry(2.0, 0.9, 8, 2);
+    geo.translate(1.0, 0, 0);
+    const cloth = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xff5a4a, emissive: 0x551008, side: THREE.DoubleSide, roughness: 0.8 }));
+    hub.add(cloth);
+    group.add(put(g, s, l, h || 0));
+    flags.push({ g, hub, cloth, base: geo.attributes.position.array.slice() });
+    return g;
+  }
+
+  function makeBlade(index, isLadder) {
+    const L = mill.bladeLen;
+    const g = new THREE.Group();
+    const wood = 0x8a5a3b;
+    add(g, box(0.5, L, 0.35, wood), 0, L / 2, 0);                       // spar
+    if (isLadder) {
+      const railM = 0x9b6a42;
+      add(g, box(0.18, L, 0.3, railM), -0.9, L / 2, 0.05);
+      add(g, box(0.18, L, 0.3, railM), 0.9, L / 2, 0.05);
+      for (let y = 1.5; y < L - 0.5; y += 1.4) {
+        const rung = add(g, box(1.9, 0.2, 0.3, 0xffd36a, { emissive: 0xffa020, emissiveIntensity: 0.35 }), 0, y, 0.08);
+        ladderGlow.push(rung);
+      }
+    } else {
+      const sailC = [0xf4efe2, 0xf0e4c8, 0xe9ddc0][index % 3];
+      for (let k = 0; k < 3; k++) {
+        const sail = add(g, box(3.6, 3.4, 0.12, sailC), 2.1, 4.2 + k * 4.8, 0);
+        sail.rotation.x = 0.05;
+        add(g, box(0.18, 3.5, 0.2, wood), 0.35, 4.2 + k * 4.8, 0);
+      }
+    }
+    return g;
+  }
+
+  function makeLuigi() {
+    const g = new THREE.Group();
+    const green = 0x2eaa4a, blue = 0x2a4fd0, skin = 0xffc79a, brown = 0x5b3a22;
+    const legs = new THREE.Group(); g.add(legs);
+    add(legs, box(0.34, 0.6, 0.36, blue), -0.2, 0.55, 0);
+    add(legs, box(0.34, 0.6, 0.36, blue), 0.2, 0.55, 0);
+    add(legs, box(0.4, 0.22, 0.55, brown), -0.2, 0.14, 0.06);
+    add(legs, box(0.4, 0.22, 0.55, brown), 0.2, 0.14, 0.06);
+    add(g, box(0.85, 0.75, 0.5, blue), 0, 1.3, 0);
+    add(g, box(0.85, 0.5, 0.52, green), 0, 1.58, 0);
+    const head = new THREE.Group(); head.position.y = 2.05; g.add(head);
+    add(head, new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), H.mat(skin)), 0, 0, 0);
+    add(head, new THREE.Mesh(new THREE.SphereGeometry(0.46, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), H.mat(green)), 0, 0.1, -0.02);
+    add(head, box(0.7, 0.08, 0.35, green), 0, 0.12, 0.38);
+    add(head, new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), H.mat(skin)), 0, -0.03, 0.42);
+    add(head, box(0.5, 0.1, 0.16, brown), 0, -0.2, 0.36);
+    const armL = new THREE.Group(); armL.position.set(-0.55, 1.65, 0); g.add(armL);
+    add(armL, box(0.22, 0.7, 0.22, green), 0, -0.3, 0);
+    const armR = new THREE.Group(); armR.position.set(0.55, 1.65, 0); g.add(armR);
+    add(armR, box(0.22, 0.7, 0.22, green), 0, -0.3, 0);
+    // lantern held on the left side
+    const lantern = new THREE.Group(); lantern.position.set(-0.78, 1.1, 0.2); g.add(lantern);
+    add(lantern, box(0.3, 0.38, 0.3, 0x3a3a46), 0, 0, 0);
+    const bulb = add(lantern, new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.2 })), 0, 0, 0);
+    lanternGlow = new THREE.Mesh(new THREE.SphereGeometry(1.6, 14, 10),
+      new THREE.MeshBasicMaterial({ color: 0xfff0b0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+    lantern.add(lanternGlow);
+    g.scale.setScalar(1.15);
+    return { g, head, armL, armR, bulb, lantern };
+  }
+
+  function makeCart() {
+    const g = new THREE.Group();
+    add(g, box(3.2, 1.4, 2.2, 0x6a3f24), 0, 1.1, 0);
+    add(g, box(3.4, 0.2, 2.4, 0x3a2416), 0, 1.85, 0);
+    for (const x of [-1.1, 1.1]) for (const z of [-1.05, 1.05]) {
+      const w = add(g, cyl(0.45, 0.45, 0.3, 12, 0x2a2a30), x, 0.45, z); w.rotation.x = Math.PI / 2;
+    }
+    const cv = document.createElement("canvas"); cv.width = 256; cv.height = 128;
+    const cx = cv.getContext("2d"); cx.fillStyle = "#6a3f24"; cx.fillRect(0, 0, 256, 128);
+    cx.fillStyle = "#ffd23f"; cx.font = "bold 92px sans-serif"; cx.textAlign = "center"; cx.textBaseline = "middle"; cx.fillText("DK", 128, 68);
+    const tex = new THREE.CanvasTexture(cv);
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.1), new THREE.MeshBasicMaterial({ map: tex }));
+    label.position.set(0, 1.15, 1.12);
+    g.add(label);
+    return g;
+  }
+
+  function makeGoomba() {
+    const g = new THREE.Group();
+    const body = new THREE.Group(); g.add(body);
+    add(body, new THREE.Mesh(new THREE.SphereGeometry(0.75, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), H.mat(0x8b5a2b)), 0, 0.5, 0);
+    add(body, cyl(0.42, 0.5, 0.5, 10, 0xf1d9b0), 0, 0.28, 0);
+    for (const x of [-0.28, 0.28]) {
+      add(body, new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), H.mat(0xffffff)), x, 0.62, 0.55);
+      add(body, new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 5), H.mat(0x111111)), x, 0.62, 0.7);
+      const f = add(body, box(0.4, 0.2, 0.6, 0x3a2416), x * 1.3, 0.1, 0.05); f.name = "foot";
+    }
+    add(body, box(0.7, 0.08, 0.1, 0x2a1608), 0, 0.82, 0.62).rotation.z = 0.0;
+    const bang = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), new THREE.MeshBasicMaterial({ color: 0xff3a2a }));
+    bang.position.y = 2.2; bang.visible = false; g.add(bang);
+    return { g, body, bang };
+  }
+
+  function makeKoopa() {
+    const g = new THREE.Group();
+    const body = new THREE.Group(); g.add(body);
+    add(body, new THREE.Mesh(new THREE.SphereGeometry(0.62, 12, 10), H.mat(0x35b34a)), 0, 0.9, 0);
+    add(body, new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), H.mat(0xffd94a)), 0, 1.45, 0.4);
+    add(body, new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 5), H.mat(0x111111)), -0.14, 1.52, 0.7);
+    add(body, new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 5), H.mat(0x111111)), 0.14, 1.52, 0.7);
+    add(body, box(0.5, 0.18, 0.3, 0xffb030), 0, 0.2, 0.2);
+    const wings = [];
+    for (const sx of [-1, 1]) {
+      const w = new THREE.Group(); w.position.set(sx * 0.55, 1.1, -0.1); body.add(w);
+      const m = add(w, box(0.1, 0.9, 1.3, 0xffffff), sx * 0.05, 0.3, 0);
+      m.position.set(sx * 0.1, 0.35, -0.35);
+      wings.push({ w, sx });
+    }
+    const shadow = new THREE.Mesh(new THREE.CircleGeometry(1.5, 20),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false }));
+    shadow.scale.set(1, 0.7, 1);
+    return { g, body, wings, shadow };
+  }
+
+  function build(p, grp, helpers) {
+    planet = p; group = grp; H = helpers;
+    const rand = H.rng(4242);
+    const dirtM = H.mat(0xe3bd68);
+
+    // ---------- scatter decoration near the route (rejection sampled) ----------
+    const parts = {
+      tree: [
+        { geo: new THREE.CylinderGeometry(0.13, 0.18, 1.1, 6), mat: H.mat(0xc9a06a), y: 0.55 },
+        { geo: new THREE.IcosahedronGeometry(0.62, 0), mat: H.mat(0x55bf60), y: 1.35 }],
+      flower: [
+        { geo: new THREE.CylinderGeometry(0.04, 0.04, 0.34, 4), mat: H.mat(0x4cae52), y: 0.17 },
+        { geo: new THREE.IcosahedronGeometry(0.16, 0), mat: H.mat(0xfff0a8, { emissive: 0xffc040, emissiveIntensity: 0.25 }), y: 0.4 }],
+      tuft: [{ geo: new THREE.ConeGeometry(0.16, 0.5, 4), mat: H.mat(0x62cf6b), y: 0.25 }],
+      rock: [{ geo: new THREE.DodecahedronGeometry(0.45, 0), mat: H.mat(0xa6a39a), y: 0 }]
+    };
+    const ok = (s, l) => {
+      if (Math.abs(l) < 5.5 && s > -16 && s < 165) return false;
+      const k = LAYOUT.canyon, t = LAYOUT.trench;
+      if (s > k.a - 3 && s < k.b + 3) return false;
+      if (s > t.a - 3 && s < t.b + 3) return false;
+      if (Math.hypot(s - mill.towerS, l) < 14) return false;
+      if (Math.abs(l) < 14 && s > 118 && s < 160) return false;
+      return true;
+    };
+    function scatterNear(def, count, sMin, sMax, h, sc0, sc1) {
+      const meshes = def.map(pt => { const m = new THREE.InstancedMesh(pt.geo, pt.mat, count); group.add(m); return m; });
+      const loc = def.map(pt => new THREE.Matrix4().makeTranslation(0, pt.y || 0, 0));
+      const base = new THREE.Matrix4(), out = new THREE.Matrix4(), q = new THREE.Quaternion(), spin = new THREE.Quaternion();
+      const sc = new V3(), up = new V3(0, 1, 0);
+      let n = 0, guard = 0;
+      while (n < count && guard++ < count * 20) {
+        const s = sMin + rand() * (sMax - sMin), l = (rand() * 2 - 1) * 90;
+        if (!ok(s, l)) continue;
+        const dir = dirAt(s, l);
+        const k = sc0 + Math.pow(rand(), 2.2) * (sc1 - sc0);
+        q.setFromUnitVectors(up, dir); spin.setFromAxisAngle(up, rand() * 6.28); q.multiply(spin);
+        sc.set(k, k, k);
+        base.compose(dir.clone().multiplyScalar(R + terrainH(s, l) + h * k), q, sc);
+        meshes.forEach((m, i) => { out.multiplyMatrices(base, loc[i]); m.setMatrixAt(n, out); });
+        n++;
+      }
+      meshes.forEach(m => { m.count = n; m.instanceMatrix.needsUpdate = true; });
+    }
+    scatterNear(parts.tree, 260, -60, 230, 0, 1.3, 4.2);
+    scatterNear(parts.flower, 900, -40, 200, 0, 1.0, 1.6);
+    scatterNear(parts.tuft, 1400, -40, 200, 0, 1.0, 2.2);
+    scatterNear(parts.rock, 160, -40, 200, 0.1, 0.8, 4.5);
+
+    // ---------- training: punch crate, pedestal, net ----------
+    crateMesh = box(1.8, 1.6, 1.8, 0xb98b4e);
+    add(crateMesh, box(1.9, 0.14, 1.9, 0x6a4a2a), 0, 0.8, 0);
+    add(crateMesh, box(0.14, 1.7, 1.9, 0x6a4a2a), 0, 0, 0);
+    group.add(put(crateMesh, LAYOUT.crate.s, LAYOUT.crate.l, 0.8));
+
+    const pedMesh = new THREE.Group();
+    const pw = (ped.s1 - ped.s0), pd = ped.half * 2;
+    add(pedMesh, box(pd, ped.top, pw, 0x8d9a7a), 0, ped.top / 2, 0);
+    add(pedMesh, box(pd + 0.4, 0.3, pw + 0.4, 0xc4d8a0), 0, ped.top, 0);
+    group.add(put(pedMesh, (ped.s0 + ped.s1) / 2, 0, 0));
+    colliders.push(pedMesh);
+
+    {
+      const pts = [], t = LAYOUT.trench;
+      for (let l = -100; l <= 100; l += 3) for (let s = t.a; s < t.b; s += 1) {
+        pts.push(localPos(s, l, terrainH(s, l) + 0.07), localPos(s + 1, l, terrainH(s + 1, l) + 0.07));
+      }
+      for (let s = t.a; s <= t.b; s += 1.5) for (let l = -100; l < 100; l += 3) {
+        pts.push(localPos(s, l, terrainH(s, l) + 0.07), localPos(s, l + 3, terrainH(s, l + 3) + 0.07));
+      }
+      const g = new THREE.BufferGeometry().setFromPoints(pts);
+      group.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xfff0c8 })));
+    }
+
+    // ---------- flags: before the leap point, on the wind path, at the bridge ----------
+    makeFlag(10, 4.5, 0, 3.2); makeFlag(10, -4.5, 0, 3.2);
+    makeFlag(68, 5.5, 0, 4.2); makeFlag(72, -5.5, 0, 4.2);
+    makeFlag(92.5, bridgeHalf + 0.6, plankTop, 4.4); makeFlag(92.5, -bridgeHalf - 0.6, plankTop, 4.4);
+    makeFlag(106, bridgeHalf + 0.6, plankTop, 4.4); makeFlag(106, -bridgeHalf - 0.6, plankTop, 4.4);
+
+    // ---------- bridge ----------
+    const woodC = [0xc8935a, 0xb8854d, 0xd4a068];
+    for (const [a, b] of [LAYOUT.bridgeA, LAYOUT.bridgeB]) {
+      for (let s = a; s < b - 0.05; s += 1.1) {
+        const plank = box(bridgeHalf * 2, 0.22, 1.0, woodC[Math.floor(rand() * 3)]);
+        group.add(put(plank, s + 0.5, 0, plankTop - 0.11));
+      }
+      for (const side of [-1, 1]) {
+        for (let s = a; s <= b + 0.01; s += 4) {
+          const post = cyl(0.12, 0.14, 1.5, 6, 0x7a5233);
+          group.add(put(post, Math.min(s, b), side * (bridgeHalf + 0.05), plankTop + 0.75));
+        }
+        const rail = box(0.08, 0.08, b - a, 0xf1e3b8);
+        group.add(put(rail, (a + b) / 2, side * (bridgeHalf + 0.05), plankTop + 1.35));
+      }
+    }
+
+    // ---------- windmill ----------
+    const towerG = new THREE.Group();
+    const tower = cyl(mill.towerR - 1.4, mill.towerR, mill.towerH, 14, 0xf0e2c0);
+    tower.position.y = mill.towerH / 2; towerG.add(tower);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(mill.towerR + 0.8, 7, 14), H.mat(0xb94c3a));
+    roof.position.y = mill.towerH + 3.2; towerG.add(roof);
+    for (let k = 0; k < 4; k++) add(towerG, box(0.4, mill.towerH, 0.5, 0x8a5a3b), Math.cos(k * 1.57) * (mill.towerR - 0.9), mill.towerH / 2, Math.sin(k * 1.57) * (mill.towerR - 0.9));
+    group.add(put(towerG, mill.towerS, 0, 0));
+    colliders.push(tower, roof);
+
+    // axle from the blade hub back to the tower, hub on the plane s = hubS
+    const axle = box(0.7, 0.7, mill.towerS - mill.towerR - mill.hubS + 0.6, 0x6b4b34);
+    group.add(put(axle, (mill.hubS + mill.towerS - mill.towerR) / 2, 0, mill.hubH));
+    const bladeRoot = new THREE.Group();
+    group.add(put(bladeRoot, mill.hubS, 0, mill.hubH));
+    add(bladeRoot, new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 10), H.mat(0x6b4b34)), 0, 0, 0);
+    for (let i = 0; i < 4; i++) {
+      const g = makeBlade(i, i === 0);
+      bladeRoot.add(g);
+      blades.push({ g, index: i, ladder: i === 0 });
+    }
+
+    // balcony
+    const balG = new THREE.Group();
+    const bw = bal.l1 - bal.l0, bd = bal.s1 - bal.s0;
+    add(balG, box(bw, 0.5, bd, 0xc8935a), 0, -0.25, 0);
+    for (const sx of [-1, 1]) add(balG, box(0.14, 1.2, bd, 0xf1e3b8), sx * (bw / 2 - 0.07), 0.6, 0);
+    add(balG, box(bw, 1.2, 0.14, 0xf1e3b8), 0, 0.6, -(bd / 2 - 0.07));
+    for (const sx of [-1, 1]) add(balG, box(0.3, bal.top - 0.5, 0.3, 0x7a5233), sx * (bw / 2 - 0.3), -(bal.top - 0.5) / 2 - 0.25, 0);
+    group.add(put(balG, (bal.s0 + bal.s1) / 2, (bal.l0 + bal.l1) / 2, bal.top));
+    colliders.push(balG);
+
+    // brake lever
+    const lv = new THREE.Group();
+    add(lv, box(0.9, 1.0, 0.9, 0x44444e), 0, 0.5, 0);
+    const stick = new THREE.Group(); stick.position.y = 1.0; lv.add(stick);
+    add(stick, cyl(0.08, 0.08, 1.7, 6, 0x333340), 0, 0.85, 0);
+    const knob = add(stick, new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), H.mat(0xff4030, { emissive: 0xaa1000, emissiveIntensity: 0.5 })), 0, 1.75, 0);
+    group.add(put(lv, LAYOUT.lever.s, LAYOUT.lever.l, 0));
+    lever = { g: lv, stick, knob, angle: -0.5 };
+
+    // Luigi on the balcony + lantern beam
+    luigi = makeLuigi();
+    group.add(put(luigi.g, (bal.s0 + bal.s1) / 2, 6, bal.top));
+    luigi.base = luigi.g.quaternion.clone();
+    beam = H.makeBeam(0xfff0b0, 90);
+    beam.material.opacity = 0;
+    beam.scale.set(2.5, 1, 2.5);
+    group.add(put(beam, (bal.s0 + bal.s1) / 2, 6, bal.top));
+
+    cart = makeCart();
+    group.add(put(cart, LAYOUT.cart.s + 25, LAYOUT.cart.l, 0));
+    cart.visible = false;
+
+    // ---------- enemies ----------
+    goomba = makeGoomba(); group.add(goomba.g);
+    koopa = makeKoopa(); group.add(koopa.g); group.add(koopa.shadow);
+
+    // a few soft clouds well away from the path
+    const cloudM = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, opacity: 0.8, flatShading: true });
+    for (let i = 0; i < 26; i++) {
+      const c = new THREE.Group();
+      for (let k = 0; k < 4; k++) add(c, new THREE.Mesh(new THREE.IcosahedronGeometry(2.4 + rand() * 2, 0), cloudM), (k - 1.5) * 3, rand(), rand() * 2);
+      const s = -40 + rand() * 260, l = (rand() < 0.5 ? -1 : 1) * (35 + rand() * 60);
+      group.add(put(c, s, l, 45 + rand() * 35));
+    }
+  }
+
+  // ============================================================
+  // runtime
+  // ============================================================
+  const tmpV = new V3();
+  function angDiff(a, b) { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; }
+
+  function reset() {
+    S.t = 0;
+    S.cp = 0;
+    S.blades = { angle: 0.5, w: 0.65, state: "spin", heldT: 0 };
+    S.rescued = false; S.rescueT = 0; S.locked = false; S.climb = null;
+    S.hints = {};
+    S.fade = 0;
+    S.climbReady = false;
+    S.puncherT = 0;
+    brake.engaged = false;
+    crateSolidReset();
+    initEnemies();
+    if (cart) { cart.visible = false; put(cart, LAYOUT.cart.s + 25, LAYOUT.cart.l, 0); }
+    if (planet && planet.gate) planet.gate.holder.visible = false;
+    if (luigi) { luigi.g.quaternion.copy(luigi.base); put(luigi.g, (bal.s0 + bal.s1) / 2, 6, bal.top); luigi.g.visible = true; luigi.g.scale.setScalar(1.15); }
+    ladderGlow.forEach(r => { r.material.emissiveIntensity = 0.35; });
+  }
+  function crateSolidReset() { crateSolid.gone = false; if (crateMesh) crateMesh.visible = true; }
+
+  // Orient so that local +Z faces direction f (an enemy's front).
+  function faceObj(obj, dir, f) {
+    const r = new V3().crossVectors(dir, f).normalize();          // local +X
+    obj.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(r, dir, f));
+  }
+
+  function newEnemy(kind) {
+    const e = { kind, state: "idle", t: 0, dead: false, pos: new V3(), fwd: new V3(), dirLock: new V3(), anchor: new V3(), h: 0 };
+    return e;
+  }
+  function initEnemies() {
+    const gp = worldPos(LAYOUT.goomba.s, LAYOUT.goomba.l, 0).sub(center);
+    S.goomba = newEnemy("goomba");
+    S.goomba.pos.copy(gp).normalize().multiplyScalar(R);
+    S.goomba.anchor.copy(S.goomba.pos);
+    S.goomba.fwd.copy(GameShared.projectTangent(T.clone().negate(), gp.clone().normalize()));
+    if (goomba) { goomba.g.visible = true; goomba.g.scale.set(1, 1, 1); goomba.bang.visible = false; }
+    const kp = worldPos(LAYOUT.koopa.s, LAYOUT.koopa.l, 0).sub(center);
+    S.koopa = newEnemy("koopa");
+    S.koopa.pos.copy(kp).normalize().multiplyScalar(R);
+    S.koopa.anchor.copy(S.koopa.pos);
+    S.koopa.fwd.copy(GameShared.projectTangent(T.clone().negate(), kp.clone().normalize()));
+    S.koopa.h = 6.5; S.koopa.target = new V3();
+    if (koopa) { koopa.g.visible = true; koopa.shadow.material.opacity = 0; koopa.shadow.visible = true; }
+  }
+
+  function snap(v, h) { return v.normalize().multiplyScalar(R + (h || 0)); }
+
+  function updateGoomba(dt, P, ctx) {
+    const e = S.goomba; if (!e || e.dead && e.t > 0.5) { if (goomba) goomba.g.visible = false; return; }
+    e.t += dt;
+    const up = e.pos.clone().normalize();
+    const mp = P.pos.clone().sub(center);
+    const toM = GameShared.projectTangent(mp.clone().sub(e.pos), up);
+    const dist = mp.distanceTo(e.pos);
+    const body = goomba.body, bang = goomba.bang;
+    if (e.dead) {
+      goomba.g.scale.set(1.3, Math.max(0.1, 0.35 - e.t * 0.3), 1.3);
+    } else if (e.state === "idle") {
+      // wander in a small circle around the anchor
+      const a = ctx.t * 0.6;
+      const sway = GameShared.projectTangent(new V3(Math.cos(a), 0.2, Math.sin(a)), up).multiplyScalar(0.8 * dt * 2);
+      e.pos.add(sway); e.fwd.copy(sway.lengthSq() ? GameShared.projectTangent(sway, up) : e.fwd);
+      if (e.pos.distanceTo(e.anchor) > 3) e.pos.lerp(e.anchor, 0.05);
+      snap(e.pos, 0);
+      body.position.y = 0;
+      if (dist < 16 && Math.abs(ctx.heightOf(P) - 0) < 3) { e.state = "alert"; e.t = 0; env.Audio.tone(900, 0.2, "square", 0.1); }
+    } else if (e.state === "alert") {
+      e.fwd.copy(toM); bang.visible = true; bang.position.y = 2.1 + Math.sin(e.t * 20) * 0.1;
+      body.position.y = Math.abs(Math.sin(e.t * 10)) * 0.4;
+      if (e.t > 0.7) { e.state = "charge"; e.t = 0; e.dirLock.copy(toM); bang.visible = false; }
+    } else if (e.state === "charge") {
+      e.fwd.copy(e.dirLock);
+      e.pos.addScaledVector(e.dirLock, 10 * dt); snap(e.pos, 0);
+      body.position.y = Math.abs(Math.sin(e.t * 22)) * 0.18;
+      if (e.t > 1.7) { e.state = "recover"; e.t = 0; }
+    } else if (e.state === "recover") {
+      body.position.y = 0; body.rotation.z = Math.sin(e.t * 14) * 0.18;
+      if (e.t > 1.1) { body.rotation.z = 0; e.state = dist < 16 ? "alert" : "idle"; e.t = 0; }
+    }
+    const upN = e.pos.clone().normalize();
+    goomba.g.position.copy(e.pos); faceObj(goomba.g, upN, GameShared.projectTangent(e.fwd, upN));
+    if (e.dead) return;
+    // contact: stomp from above defeats it, anything else hurts
+    const hm = ctx.heightOf(P);
+    if (dist < 1.25 && hm < 1.4) {
+      if (P.vel.dot(upN) < -1 && hm > 0.5) { defeat(e, goomba, P, upN); P.vel.addScaledVector(upN, 9 - P.vel.dot(upN)); P.airJumps = 1; }
+      else if (e.state === "charge" || e.state === "alert") ctx.hurt(mp.clone().sub(e.pos));
+    }
+  }
+  function defeat(e, mesh, P, up) {
+    e.dead = true; e.t = 0; e.state = "dead";
+    env.Audio.collect();
+    env.Particles.spawn(e.pos.clone().add(center).addScaledVector(up, 0.8), 0xffd76a, 18, 3.5);
+    if (mesh.bang) mesh.bang.visible = false;
+  }
+
+  function updateKoopa(dt, P, ctx) {
+    const e = S.koopa; if (!e) return;
+    if (e.dead) { if (e.t < 0.9) { e.t += dt; koopa.g.position.addScaledVector(e.pos.clone().normalize(), -dt * 2); koopa.g.scale.setScalar(Math.max(0.05, 1 - e.t)); } else koopa.g.visible = false; koopa.shadow.visible = false; return; }
+    e.t += dt;
+    const up = e.pos.clone().normalize();
+    const mp = P.pos.clone().sub(center);
+    const mUp = mp.clone().normalize();
+    const flat = mp.clone().sub(e.pos); const dist = flat.length();
+    const fl = GameShared.projectTangent(flat, up);
+    const sh = koopa.shadow;
+    let flap = 6;
+    if (e.state === "idle") {            // hover in a slow circle
+      const a = ctx.t * 0.7;
+      const off = GameShared.projectTangent(new V3(Math.cos(a), 0.3, Math.sin(a)), up).multiplyScalar(3.5);
+      const tgt = e.anchor.clone().add(off); snap(tgt, 0);
+      e.pos.lerp(tgt, Math.min(1, dt * 1.5)); snap(e.pos, 0);
+      e.h += (6.5 - e.h) * Math.min(1, dt * 3);
+      e.fwd.copy(GameShared.projectTangent(off.clone().applyAxisAngle(up, 1.4), up));
+      sh.material.opacity += (0.12 - sh.material.opacity) * Math.min(1, dt * 3);
+      if (dist < 17 && ctx.heightOf(P) < 8) { e.state = "track"; e.t = 0; }
+    } else if (e.state === "track") {     // follow Mario overhead; the shadow marks the ground below
+      e.pos.addScaledVector(fl, Math.min(dist, 6 * dt)); snap(e.pos, 0);
+      e.fwd.copy(fl);
+      sh.material.opacity += (0.35 - sh.material.opacity) * Math.min(1, dt * 6);
+      if (e.t > 1.6) { e.state = "lock"; e.t = 0; }
+      if (dist > 26) { e.state = "idle"; e.t = 0; }
+    } else if (e.state === "lock") {      // shadow stops and flashes: the warning
+      sh.material.opacity = 0.45 + 0.25 * Math.sin(e.t * 30);
+      flap = 14;
+      if (e.t > 0.6) { e.state = "dive"; e.t = 0; }
+    } else if (e.state === "dive") {
+      e.h = Math.max(0.2, 6.5 * (1 - e.t / 0.28));
+      flap = 2;
+      if (e.t >= 0.28) {
+        e.state = "grounded"; e.t = 0; e.h = 0.2;
+        env.Particles.spawn(e.pos.clone().add(center).addScaledVector(up, 0.3), 0xffffff, 10, 2.5);
+        if (dist < 1.9 && ctx.heightOf(P) < 1.6) ctx.hurt(mp.clone().sub(e.pos));
+        env.Audio.land();
+      }
+    } else if (e.state === "grounded") {  // dazed on the ground: the safe moment to punch it
+      sh.material.opacity *= 0.9; flap = 0;
+      if (e.t > 1.5) { e.state = "rise"; e.t = 0; }
+    } else if (e.state === "rise") {
+      e.h = Math.min(6.5, e.h + dt * 7);
+      if (e.h >= 6.5) { e.state = "idle"; e.t = 0; }
+    }
+    const upN = e.pos.clone().normalize();
+    koopa.g.position.copy(e.pos).addScaledVector(upN, e.h);
+    faceObj(koopa.g, upN, GameShared.projectTangent(e.fwd, upN));
+    for (const w of koopa.wings) w.w.rotation.z = w.sx * Math.sin(ctx.t * flap) * 0.7;
+    koopa.body.rotation.z = e.state === "grounded" ? Math.sin(e.t * 12) * 0.12 : 0;
+    // ground shadow, lying flat on the surface
+    sh.position.copy(e.pos).addScaledVector(upN, 0.12);
+    faceObj(sh, upN, GameShared.projectTangent(e.fwd, upN));
+    sh.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new V3(1, 0, 0), -Math.PI / 2));
+    // diving body hurts on the way down
+    if (e.state === "dive") {
+      const body = koopa.g.position.clone();
+      if (body.distanceTo(mp) < 1.3) ctx.hurt(mp.clone().sub(e.pos));
+    }
+    // touch while hovering low
+    if (e.state !== "dive" && e.h < 2 && e.state !== "grounded" && koopa.g.position.distanceTo(mp) < 1.2) ctx.hurt(mp.clone().sub(e.pos));
+  }
+
+  // ---- punch: called once per punch at the impact moment ----
+  function punchHit(P, fwd, up) {
+    const origin = P.pos.clone().addScaledVector(up, 0.9).addScaledVector(fwd, 1.1);
+    let hit = 0;
+    const loc = origin.clone().sub(center);
+    // crate
+    if (!crateSolid.gone && crateMesh) {
+      const cw = crateMesh.getWorldPosition(new V3());
+      if (cw.distanceTo(origin) < 2.4) {
+        crateSolid.gone = true; crateMesh.visible = false; hit++;
+        env.Particles.spawn(cw, 0xd9a35c, 22, 4); env.Audio.bossHit();
+        env.toast("Smash!", 900);
+      }
+    }
+    // enemies
+    if (S.goomba && !S.goomba.dead && goomba) {
+      const gw = goomba.g.getWorldPosition(new V3());
+      if (gw.distanceTo(origin) < 2.4) { defeat(S.goomba, goomba, P, gw.clone().sub(center).normalize()); hit++; env.Audio.bossHit(); }
+    }
+    if (S.koopa && !S.koopa.dead && koopa && S.koopa.h < 2.2) {
+      const kw = koopa.g.getWorldPosition(new V3());
+      if (kw.distanceTo(origin) < 2.6) {
+        const e = S.koopa; e.dead = true; e.t = 0; hit++; env.Audio.bossHit();
+        env.Particles.spawn(kw, 0x7fe08a, 18, 4);
+      }
+    }
+    // brake lever
+    if (lever && S.blades.state !== "held" && !S.rescued) {
+      const kw = lever.knob.getWorldPosition(new V3());
+      if (kw.distanceTo(origin) < 2.6 && S.blades.state === "spin") {
+        S.blades.state = "braking"; brake.engaged = true; hit++;
+        env.Audio.bossHit();
+        env.Particles.spawn(kw, 0xff6a4a, 12, 3);
+      }
+    }
+    return hit;
+  }
+
+  // ---- windmill ----
+  function updateMill(dt, P, ctx) {
+    const b = S.blades;
+    if (b.state === "spin") { b.w += (0.65 - b.w) * Math.min(1, dt * 1.2); }
+    else if (b.state === "braking") {
+      b.w *= Math.exp(-dt * 5);
+      if (b.w < 0.01) {
+        b.w = 0; b.state = "stopped"; b.heldT = 0;
+        const d = Math.abs(angDiff(b.angle, Math.PI)) * 180 / Math.PI;       // ladder blade vs pointing straight down
+        S.ladderOff = d;
+        if (d <= 22) {
+          S.climbReady = true;
+          ladderGlow.forEach(r => { r.material.emissiveIntensity = 1.4; });
+          ctx.hint("The ladder blade stopped. Walk up to its glowing end.", 6000);
+          ctx.Audio.gate();
+        } else {
+          ctx.toast("Wrong blade!", 1600);
+          ctx.hint("Only the blade with the glowing ladder reaches Luigi.\nThe brake will slip. Try again at the lever.", 5000);
+        }
+      }
+    } else if (b.state === "stopped" && !S.climbReady) {
+      b.heldT += dt;
+      if (b.heldT > 3.2) { b.state = "spin"; brake.engaged = false; b.w = 0.1; ctx.Audio.tone(300, 0.3, "sawtooth", 0.08, 160); }
+    }
+    b.angle += b.w * dt;
+    for (const bl of blades) bl.g.rotation.z = -(b.angle + bl.index * Math.PI / 2);
+    // lever pose follows the shared brake state
+    const target = brake.engaged ? 0.75 : -0.5;
+    lever.angle += (target - lever.angle) * Math.min(1, dt * 10);
+    lever.stick.rotation.z = lever.angle;
+
+    // climb trigger: walk to the lower end of the ladder blade
+    if (S.climbReady && !S.locked && !S.rescued) {
+      const th = b.angle;
+      const tipL = mill.bladeLen * Math.sin(th), tipH = mill.hubH + mill.bladeLen * Math.cos(th);
+      const base = worldPos(mill.hubS - 0.6, tipL, 0);
+      if (P.pos.distanceTo(base) < 3.4 && ctx.heightOf(P) < 3) {
+        S.locked = true;
+        S.climb = { t: 0, dur: 2.8, tipL, tipH };
+        ctx.hint("", 1);
+      }
+    }
+  }
+
+  function climbPoint(c, k) {
+    // 0..0.7 up the ladder blade; 0.7..1 hop onto the balcony
+    const hubL = 0, hubH = mill.hubH;
+    const e = smooth(0, 1, k);
+    if (k < 0.7) {
+      const u = k / 0.7;
+      return { s: mill.hubS - 0.6, l: c.tipL * (1 - u) + hubL * u, h: c.tipH * (1 - u) + (hubH - 0.2) * u };
+    }
+    const u = smooth(0, 1, (k - 0.7) / 0.3), hop = Math.sin(u * Math.PI) * 1.6;
+    const bs = (bal.s0 + bal.s1) / 2, bl = (bal.l0 + bal.l1) / 2 - 1.2;
+    return { s: mill.hubS - 0.6 + (bs - mill.hubS + 0.6) * u, l: hubL + (bl - hubL) * u, h: hubH - 0.2 + (bal.top - hubH + 0.2) * u + hop };
+  }
+  function scripted(dt, P, hooks) {
+    const c = S.climb; if (!c) { S.locked = false; return; }
+    c.t += dt;
+    const k = clamp(c.t / c.dur, 0, 1);
+    const p = climbPoint(c, k);
+    const wp = worldPos(p.s, p.l, p.h);
+    P.pos.copy(wp); P.vel.set(0, 0, 0);
+    const up = wp.clone().sub(center).normalize();
+    P.up.copy(up);
+    P.face.copy(GameShared.projectTangent(T, up));
+    P.grounded = true; P.airJumps = 1;
+    P.climbing = k < 0.7;
+    if (k >= 1) {
+      S.locked = false; S.climb = null; P.climbing = false;
+      startRescue(P, hooks);
+    }
+  }
+
+  function startRescue(P, hooks) {
+    if (S.rescued) return;
+    S.rescued = true; S.rescueT = 0;
+    hooks.toast("Luigi!", 2400);
+    hooks.hint("You found Luigi! Something with the letters DK rolled in below.", 7000);
+    env.Audio.victory();
+    env.Particles.spawn(luigi.g.getWorldPosition(new V3()).add(new V3(0, 2, 0)), 0xffe08a, 40, 5);
+  }
+
+  // balcony landing also counts (double jump from the ladder top, or any route that gets there)
+  function checkBalcony(P, ctx) {
+    if (S.rescued || S.locked) return;
+    const u = tmpV.copy(P.pos).sub(center).normalize();
+    const c = coordsOf(u), h = ctx.heightOf(P);
+    if (h > bal.top - 0.6 && h < bal.top + 3 && c.s > bal.s0 - 0.5 && c.s < bal.s1 + 0.5 && c.l > bal.l0 - 0.5 && c.l < bal.l1 + 0.5) startRescue(P, ctx);
+  }
+
+  function updateRescue(dt, P, ctx) {
+    if (!S.rescued) return;
+    S.rescueT += dt;
+    const t = S.rescueT;
+    // Luigi turns to face Mario, waves, then joins him at the cart
+    const lw = luigi.g.getWorldPosition(new V3());
+    const up = lw.clone().sub(center).normalize();
+    if (t < 3.2) {
+      const toM = GameShared.projectTangent(P.pos.clone().sub(lw), up);
+      faceObj(luigi.g, up, toM);
+      luigi.armR.rotation.z = Math.PI * 0.8 + Math.sin(t * 9) * 0.3;
+      luigi.g.position.y += 0;
+    } else if (t < 5.4) {
+      const k = smooth(0, 1, (t - 3.2) / 2.2);
+      const from = localPos((bal.s0 + bal.s1) / 2, 6, bal.top), to = localPos(LAYOUT.cart.s - 2, LAYOUT.cart.l + 3, 0);
+      const mid = from.clone().lerp(to, k);
+      const arc = Math.sin(k * Math.PI) * 6;
+      luigi.g.position.copy(mid).addScaledVector(mid.clone().normalize(), arc);
+      luigi.armR.rotation.z = 0.3;
+    }
+    if (t > 1.5 && !cart.visible) { cart.visible = true; }
+    if (cart.visible) {
+      const k = smooth(0, 1, (t - 1.5) / 3.0);
+      put(cart, LAYOUT.cart.s + 25 * (1 - k), LAYOUT.cart.l, 0);
+    }
+    if (t > 5.4 && planet.gate && !planet.gate.holder.visible) {
+      planet.gate.holder.visible = true;
+      env.Audio.gate();
+      ctx.toast("Luigi joins the journey!", 2600);
+      ctx.hint("Follow the DK cart's light to the gate.", 6000);
+    }
+  }
+
+  // ---- lantern: one long flash, then two short ones ----
+  function updateLantern(t) {
+    const ph = (t % 6);
+    const on = ph < 1.0 || (ph > 1.5 && ph < 1.8) || (ph > 2.2 && ph < 2.5);
+    const lit = S.rescued ? 0.25 : (on ? 1 : 0);
+    beam.material.opacity += ((on && !S.rescued ? 0.55 : (S.rescued ? 0.08 : 0)) - beam.material.opacity) * 0.35;
+    lanternGlow.material.opacity += (lit * 0.7 - lanternGlow.material.opacity) * 0.4;
+    luigi.bulb.material.opacity = 0.35 + lit * 0.65;
+  }
+
+  function updateFlags(t) {
+    for (const f of flags) {
+      const dirW = wind.direction;
+      const fr = frameAt(f.g.position.clone().normalize());
+      // wind direction in the flag's local XZ plane (+X right, +Z back)
+      const lx = dirW.dot(fr.r), lz = dirW.dot(fr.f.clone().negate());
+      const ang = Math.atan2(-lz, lx);
+      f.hub.rotation.y = ang;
+      const droop = (1 - clamp(wind.strength / 1.4, 0, 1)) * 1.05;
+      f.cloth.rotation.z = -droop;
+      const a = f.cloth.geometry.attributes.position, base = f.base;
+      for (let i = 0; i < a.count; i++) {
+        const x = base[i * 3];
+        a.setZ(i, Math.sin(t * (3 + wind.strength * 4) - x * 3) * 0.14 * (x / 2.0) * (0.4 + wind.strength));
+      }
+      a.needsUpdate = true;
+    }
+  }
+
+  // ---- hints: shown once, when Mario first gets near ----
+  function updateHints(P, ctx, s, l) {
+    const once = (k, cond, text, ms) => { if (!S.hints[k] && cond) { S.hints[k] = true; ctx.hint(text, ms || 6500); } };
+    once("punch", s > 14 && s < 30, ctx.isTouch ? "Tap Punch to smash the crate." : "Press J (or F) to punch the crate.");
+    once("goomba", s > 28 && s < 40 && !S.goomba.dead, "A goomba! It charges in a straight line. Step aside, then punch it.");
+    once("double", s > 36 && s < 48, "Jump, then jump again in the air to reach the stone.");
+    once("koopa", s > 44 && s < 56 && !S.koopa.dead, "A koopa is watching. Its shadow shows where it will dive.");
+    once("trench", s > 52 && s < 64, "Don't worry about the gap. The net will catch you.");
+    once("wind", s > 62 && s < 76, "The flags show the wind. It pushes you sideways when you jump.");
+    once("bridge", s > 88 && s < 100, "The bridge is broken. Jump, then jump again in the air.");
+    once("lever", s > 120 && s < 130, "Punch the red lever to stop the windmill. Stop the blade with the glowing ladder.", 8000);
+  }
+
+  // ---- main update ----
+  function checkpointUpdate(P, ctx, s, l) {
+    if (!ctx.grounded || s < -50) return;
+    const cps = LAYOUT.checkpoints;
+    for (let i = cps.length - 1; i > S.cp; i--) {
+      if (s >= cps[i].s && Math.abs(l) < 8 && ctx.heightOf(P) > -0.5 && s < cps[i].s + 30) { S.cp = i; break; }
+    }
+  }
+  function respawn(P, hooks, hurtRestore) {
+    const cp = LAYOUT.checkpoints[S.cp];
+    const pos = worldPos(cp.s, cp.l, 0.05);
+    const up = pos.clone().sub(center).normalize();
+    hooks.teleport(pos, GameShared.projectTangent(T, up));
+    if (hurtRestore) hooks.restoreHealth();
+    hooks.fade();
+  }
+
+  function update(dt, ctx) {
+    const P = ctx.P;
+    S.t += dt;
+    windAt(P.up, ctx.t);
+    updateFlags(ctx.t);
+    updateLantern(ctx.t);
+    if (!S.locked) { updateGoomba(dt, P, ctx); updateKoopa(dt, P, ctx); }
+    updateMill(dt, P, ctx);
+    updateRescue(dt, P, ctx);
+    const u = tmpV.copy(P.pos).sub(center).normalize();
+    const c = coordsOf(u);
+    updateHints(P, ctx, c.s, c.l);
+    checkpointUpdate(P, ctx, c.s, c.l);
+    checkBalcony(P, ctx);
+    // fell into the canyon: back to the last checkpoint, no penalty
+    if (ctx.heightOf(P) < LAYOUT.fallRespawn && !S.locked) {
+      ctx.toast("Whoa! Back to the flag.", 1400);
+      respawn(P, ctx, false);
+    }
+  }
+
+  // rope railings: stay on the planks while walking, not while jumping
+  function constrain(P, curH) {
+    if (S.locked) return;
+    const u = tmpV.copy(P.pos).sub(center).normalize();
+    const c = coordsOf(u);
+    const onA = c.s >= LAYOUT.bridgeA[0] + 0.5 && c.s <= LAYOUT.bridgeA[1];
+    const onB = c.s >= LAYOUT.bridgeB[0] && c.s <= LAYOUT.bridgeB[1] - 0.5;
+    if ((onA || onB) && P.grounded && curH > plankTop - 0.3 && curH < plankTop + 0.4) {
+      const lim = bridgeHalf - 0.3;
+      if (Math.abs(c.l) > lim) {
+        const l = clamp(c.l, -lim, lim);
+        P.pos.copy(worldPos(c.s, l, curH));
+        const up = P.up; const out = P.vel.dot(B) * Math.sign(c.l);
+        if (out > 0) P.vel.addScaledVector(B, -P.vel.dot(B));
+      }
+    }
+    // world edge: a gentle wall far off the route
+    if (Math.abs(c.l) > 100) {
+      const l = clamp(c.l, -100, 100);
+      P.pos.copy(worldPos(c.s, l, curH));
+      P.vel.addScaledVector(B, -P.vel.dot(B));
+    }
+  }
+
+  // On the balcony the blades hang between a follow camera and Mario, so look along the balcony instead.
+  function cameraHint(P) {
+    const u = tmpV.copy(P.pos).sub(center);
+    const h = u.length() - R; u.normalize();
+    const c = coordsOf(u);
+    if (h > bal.top - 1.5 && c.s > bal.s0 - 1 && c.s < bal.s1 + 1 && c.l > bal.l0 - 1.5 && c.l < bal.l1 + 1) return GameShared.projectTangent(B, u);
+    return null;
+  }
+
+  function objective() {
+    if (S.rescued) return S.rescueT > 5.4 ? "Luigi is safe! Enter the gate" : "Luigi is safe!";
+    if (S.climbReady) return "Climb the ladder to Luigi";
+    return "Find Luigi's lantern";
+  }
+
+  // ---- debug / test access ----
+  const debug = {
+    get state() { return S; }, layout: LAYOUT,
+    coordsOf: (p) => coordsOf(p.clone().sub(center).normalize()),
+    worldPos, query, dirAt,
+    get enemies() { return { goomba: S.goomba, koopa: S.koopa }; },
+    mill: () => ({ angle: S.blades.angle, w: S.blades.w, state: S.blades.state, ladderOff: S.ladderOff, climbReady: S.climbReady }),
+    setBladeAngle(a) { S.blades.angle = a; }
+  };
+
+  function attach(e) { env = e; reset(); }
+
+  return {
+    configure, shapeGround, exitDir, build, attach, reset, update, query, drift, constrain,
+    punchHit, scripted, objective, debug, colliders, cameraHint,
+    respawn: (P, hooks, restoreHealth) => respawn(P, hooks, restoreHealth),
+    isLocked: () => S.locked,
+    get layout() { return LAYOUT; }
+  };
+})();

@@ -1,0 +1,59 @@
+# Wind Gardens: star 1 (issues #3 to #6)
+
+Wind Gardens replaces the old "Meadow Planet" as the first of four stars. It is built by `js/wind-gardens.js` and wired into `index.html` by a handful of hooks. The gate at the end still launches to the next existing planet.
+
+## Run it
+
+```
+python3 -m http.server 8765
+# open http://localhost:8765/   (Three.js r128 and GLTFLoader load from CDNs)
+```
+
+Desktop controls: `WASD` or arrows move, `Space` jumps (press again in the air), `J`, `F` or `K` punch, drag to turn and tilt the camera, mouse wheel zooms, `R` or the ⟳ button resets the camera. Touch: left stick moves, **Jump** button (tap again in the air), **Punch** button, one finger on the right side turns and tilts, two fingers pinch to zoom.
+
+## Route (arc length `s` from the landing, `l` positive to Mario's right)
+
+| s | What | Teaches |
+|---|---|---|
+| -15..20 | Landing meadow, flags, Luigi's lantern beam on the horizon | Find the goal |
+| 22 | Punch crate | Punch |
+| 34 | Goomba, alone on flat ground | Step aside, punch it |
+| 40..46 | Stone pedestal, 3.4 high | Double jump (single jump tops out at 2.76) |
+| 50 | Winged koopa, alone in an open meadow | Shadow telegraphs the dive; punch it while dazed |
+| 57..66 | Training trench, 3 deep, net floor | Safe place to miss; walk or jump out |
+| 66..78 | Wind path with cloth flags | Read the wind |
+| 76..123 | Bridge over a canyon ring with a 9 unit gap | Double jump mid-air to land on the far planks |
+| 124 | Red brake lever | Punch to stop the mill |
+| 129.5 | Four blades; only blade 0 has a ladder | Stop it pointing down (within 22°) |
+| 131..135, l 2..10 | Balcony with Luigi | Landing here triggers the rescue once |
+| 150, 152 | DK cart rolls in, gate opens | Leads on to the next star |
+
+The canyon is a full ring around the planet, so the bridge is the only way across. Falling in sends Mario back to the last checkpoint with no health loss. Checkpoints: `landing` s 0, `training` s 54, `bridge` s 74, `windmill` s 125. They are defined in `LAYOUT.checkpoints` and restore position, heading and velocity. Mario's health returns to full only when enemies knock it to zero.
+
+## Mechanics (#4)
+
+- Double jump: one extra jump in the air, restored on landing, with a 0.1 s coyote window after walking off an edge.
+- Punch: 0.38 s swing, lunge of 3.5 units/s, hit resolves at 70% of the swing in a sphere of radius 2.4 centered 1.1 units ahead and 0.9 above Mario. It breaks the crate, defeats a goomba, defeats a grounded koopa and pulls the brake lever. Stomping a goomba also works.
+- Damage: contact with a charging goomba or the koopa's dive costs one of three hearts, knocks Mario back and gives 1.6 s of invulnerability. At zero hearts Mario returns to the checkpoint with full health.
+- Camera: default sits behind and above Mario (horizontal 8.5, height 3.4). Vertical drag tilts (0.1 to 1.15 rad), wheel or pinch zooms (4.5 to 16), reset restores both. While airborne the look target moves 3.5 ahead so the landing stays in frame. A ray from Mario to the camera is tested against the tower, roof, balcony and pedestal, and the camera is pulled in when they block it. On the balcony the camera swings to look along the balcony, because the blades would otherwise hang between camera and Mario.
+- Ground model: the base sphere plus `terrainH(s,l)` (trench and canyon, drawn into the mesh), plus solid boxes and the tower cylinder. Mario stands on a top within 0.65 above his feet and is blocked by a body that overlaps him. A void cell (canyon with no plank) has no ground.
+
+## Shared state (#2 contract)
+
+`GameShared.wind.direction` and `.strength` are written once per frame by the level and read by both the flag animation and Mario's drift (0.65 × strength, half on the ground, only between s 60 and 125). `GameShared.brake.engaged` is set by the lever and read by the blade animation and the lever pose.
+
+## Characters (#6)
+
+Luigi, the DK cart, goomba and koopa are primitives built in code. The Mario GLB is unchanged. Luigi stands on the balcony with a lantern that flashes long, short, short every 6 s and shoots a light beam up so it can be seen from the landing. After the rescue he turns toward Mario, waves, and hops down to the cart. A real Luigi GLB can replace `makeLuigi()`.
+
+The punch pose moves the right shoulder bone (`PUNCH_ARM` in `index.html`); the ladder climb raises both arms. The offsets are a first guess from the rig notes in `updatePlaying` and have not yet been checked visually.
+
+## Test hooks
+
+`window.__dbg` exposes `P`, `WindGardens.debug` (coordinates, state, enemies, `setBladeAngle`), `step(n, dt)` to advance the simulation without rendering, and `pause`. They are for QA scripts and have no effect on play.
+
+## Open questions for Moshe
+
+- Blade stop window is ±22° around straight down at 0.65 rad/s. Is it easy enough for ages 7 to 8, or should the window widen?
+- Gap width of 9 units is tuned by calculation and automated runs, not by a child. It needs a play session.
+- Real art (#5 touches) and a Luigi GLB are still open.
