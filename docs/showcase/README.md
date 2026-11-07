@@ -96,6 +96,14 @@ Landing on the balcony triggers the rescue exactly once: the brother turns, wave
 ![מרפסת / Balcony](img/14-balcony-rescue.png)
 ![קרונית ושער / Cart and gate](img/15-cart-and-gate.png)
 
+## 8. יום ולילה / Day and night
+
+נוסף משטר יום ולילה: יממה שלמה נמשכת 5 דקות, כי הכוכב מסתובב סביב עצמו. המשחק מתחיל בבוקר, עובר לצהריים, לשקיעה מאחורי הטחנה וללילה, וחוזר לבוקר. בלילה נדלקים אורות סימון בשולי הגשר והרווח, הצל של הקופה מקבל טבעת זוהרת, והפנס של האח בולט יותר. בתמונה: הנחיתה, ראש הגשר ועמדת הבלם, בבוקר, בשקיעה ובלילה.
+
+A day and night cycle: a full day lasts 5 minutes as the planet turns on its axis. The game starts in the morning, passes noon, sets behind the windmill and turns to night, then back to morning. At night, markers light the bridge and gap edges, the koopa's shadow gets a glowing ring and the brother's lantern stands out. Shown: the landing, the bridge top and the brake lever, at morning, dusk and night.
+
+![יום ולילה / Day and night](img/16-day-night-cycle.jpg)
+
 ## מה היה חשוב בדרך / What mattered along the way
 
 - **מקור אמת אחד.** רוח, בלם ושמות פעולות הקלט מוגדרים במקום אחד, כדי שכמה סוכנים יוכלו לעבוד במקביל בלי להתנגש.
