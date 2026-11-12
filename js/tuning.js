@@ -64,9 +64,9 @@ const TUNE = (() => {
 
 /* Visual effects that can be switched off one by one, to measure what each costs:
    index.html?fx=-canyon,-islands   (a leading minus turns that effect off).
-   Names: day, canyon, windmill, markers, islands, stones. */
+   Names: day, canyon, windmill, markers, islands, stones, path, shadows, sky. */
 const FX = (() => {
-  const fx = { day: true, canyon: true, windmill: true, markers: true, islands: true, stones: true };
+  const fx = { day: true, canyon: true, windmill: true, markers: true, islands: true, stones: true, path: true, shadows: true, sky: true };
   try {
     const m = /[?&]fx=([^&]*)/.exec(location.search);
     if (m) decodeURIComponent(m[1]).split(",").forEach(k => { k = k.trim(); if (k[0] === "-" && k.slice(1) in fx) fx[k.slice(1)] = false; });

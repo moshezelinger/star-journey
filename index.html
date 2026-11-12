@@ -375,7 +375,7 @@ const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(70, 20, 12),
   new THREE.MeshBasicMaterial({ color: 0xfff1d0, fog: false, depthWrite: false }));
 sunDisc.frustumCulled = false; sunDisc.renderOrder = -1;
 scene.add(sunDisc);
-DayCycle.attach({ scene, sun, hemi, rim, stars: starfield, sunDisc });
+DayCycle.attach({ scene, renderer, sun, hemi, rim, stars: starfield, sunDisc });
 
 // ---------- shared materials ----------
 const MAT = {
@@ -544,6 +544,13 @@ function buildPlanet(def, index) {
   // ---- decorations per theme ----
   if (def.theme === "wind") {
     WindGardens.build(p, group, { mat: mat, rng: rng, makeBeam: makeBeam, tint: groundTint(def, index) });
+    // sun shadows (issue #5): solid scenery casts and receives; the ground only receives
+    if (FX.shadows) group.traverse(o => {
+      if (!o.isMesh) return;
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      o.receiveShadow = true;
+      o.castShadow = o !== body && !(m && m.transparent) && !o.userData.noCast;
+    });
   }
 
   if (def.theme === "meadow") {
@@ -772,6 +779,7 @@ player.userData.restRot = {};
       model.scale.setScalar(scale);
       model.position.y = -footY * scale;
 
+      model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
       playerRig.add(model);
 
       const bones = {};
@@ -2118,10 +2126,42 @@ function animate() {
   Particles.update(dt);
   Audio.update();
   starfield.position.copy(camera.position);
-  DayCycle.apply(camera);
+  DayCycle.apply(camera, P.pos, active && active.center);
+  updateHeroShadow();
   heroNightGlow();
   TunePanel.update();
   renderer.render(scene, camera);
+}
+
+// A soft round shadow straight under the hero (issue #5), so the landing spot reads during a
+// jump whatever the sun is doing. It lies on the first surface below him and fades with height.
+const heroShadow = (() => {
+  const cv = document.createElement("canvas"); cv.width = cv.height = 64;
+  const cx = cv.getContext("2d"), gr = cx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, "rgba(0,0,0,0.55)"); gr.addColorStop(0.6, "rgba(0,0,0,0.3)"); gr.addColorStop(1, "rgba(0,0,0,0)");
+  cx.fillStyle = gr; cx.fillRect(0, 0, 64, 64);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({
+    map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false, fog: false,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  m.renderOrder = 1; m.visible = false;
+  scene.add(m);
+  return m;
+})();
+const _hsUp = new THREE.Vector3(), _hsQ = new THREE.Quaternion(), _hsZ = new THREE.Vector3(0, 0, 1);
+function updateHeroShadow() {
+  const show = state === S.PLAYING && active && active.def.theme === "wind" && player.visible && !P.climbing;
+  heroShadow.visible = !!show;
+  if (!show) return;
+  _hsUp.copy(P.pos).sub(active.center);
+  const f = WindGardens.cameraFloor(P.pos);
+  const above = f.h - f.floor;
+  if (!isFinite(f.floor) || above > 14) { heroShadow.visible = false; return; }
+  _hsUp.normalize();
+  heroShadow.position.copy(active.center).addScaledVector(_hsUp, active.radius + f.floor + 0.04);
+  heroShadow.quaternion.copy(_hsQ.setFromUnitVectors(_hsZ, _hsUp));
+  const k = Math.max(0, 1 - above / 14);
+  heroShadow.scale.setScalar(0.75 + 0.35 * k);
+  heroShadow.material.opacity = 0.35 + 0.65 * k;
 }
 
 // At night Mario's own textures glow faintly (emissive = his texture), so he stays readable

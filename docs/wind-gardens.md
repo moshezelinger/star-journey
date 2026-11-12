@@ -60,7 +60,10 @@ How the rotation works: the planet stays still and the sun direction turns aroun
 - Canyon: its own fine mesh (`buildCanyon`, 0.5 units along the route, finer near the route across it), displaced by the same `terrainH` the physics uses, with strata colours that darken and turn blue with depth. The coarse planet sphere is pushed out of sight under the strip.
 - Windmill: four broad blades. Three have a lattice frame and one long cloth sail that billows with `GameShared.wind`. The ladder blade has no sail, glowing rungs and a red pennant at the tip. The tower has a stone foot, a door and three windows.
 - Depth: light stones along the path edges (the route also reads in greyscale), the path is lighter and the grass darker than before, and twelve low-contrast islands float far behind the route.
-- Each effect can be switched off for measurement: `?fx=-day,-canyon,-windmill,-markers,-islands,-stones`.
+- Path: its own ribbon mesh (`buildPath`) that follows `terrainH` every 0.5 units, wobbles at the edges and fades into the grass through vertex alpha. The coarse planet triangles under it keep the grass colour. It stops where the ground dips (trench, canyon).
+- Sky: a dome that follows the camera (`DayCycle`), zenith in the key frame's sky colour, horizon in the fog colour, with a soft glow around the sun. Far terrain now fades into the sky instead of a flat backdrop.
+- Shadows: the sun casts a shadow map (2048, 1024 on touch screens) over 76×76 units centred on the hero. Trees, flowers, the bridge, the mill, enemies and the hero cast; the ground only receives. A soft round shadow also sits straight under the hero on the first surface below him and fades with height, so the landing spot reads during a jump at any time of day.
+- Each effect can be switched off for measurement: `?fx=-day,-canyon,-windmill,-markers,-islands,-stones,-path,-shadows,-sky`.
 
 ## Tuning (#3, #4, #8)
 

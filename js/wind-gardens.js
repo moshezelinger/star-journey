@@ -162,7 +162,7 @@ const WindGardens = (() => {
         if (-h > LAYOUT.trench.depth + 0.5) set = tmp.copy(rock).lerp(deep, k);
         else set = tmp.copy(net);
       } else if (h < -0.4) set = tmp.copy(net).lerp(rock, 0.2);
-      else if (Math.abs(c.l) < 3.2 && c.s > -14 && c.s < 160) set = tmp.copy(dirt);
+      else if (!FX.path && Math.abs(c.l) < 3.2 && c.s > -14 && c.s < 160) set = tmp.copy(dirt);
       else if (Math.abs(c.l) < 11 && c.s > 20 && c.s < 56) set = tmp.copy(plaza);
       if (set) {
         set.multiplyScalar(0.94 + rr() * 0.1);
@@ -369,7 +369,7 @@ const WindGardens = (() => {
         localPos(s, l, h).toArray(pos, n * 3);
         const depth = -h;
         if (depth < 0.25) {
-          if (Math.abs(l) < 3.2) c.copy(dirt); else H.tint(dirAt(s, l, v), c);
+          if (!FX.path && Math.abs(l) < 3.2) c.copy(dirt); else H.tint(dirAt(s, l, v), c);
         } else {
           const wob = depth + 0.7 * Math.sin(l * 0.11 + s * 0.35) + 0.4 * Math.sin(l * 0.37);
           const band = Math.floor(wob / 2.3);
@@ -398,6 +398,60 @@ const WindGardens = (() => {
     }
     const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0,
       polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    group.add(m);
+  }
+
+  // ---------- the dirt path: its own soft-edged ribbon (issue #5) ----------
+  // The planet triangles are about 4 units wide, so painting the 6 unit path into them gave a
+  // jagged yellow polygon. The ribbon follows terrainH at 0.5 unit steps, wobbles a little at
+  // its edges and fades into the grass through vertex alpha. It is skipped wherever the ground
+  // dips (trench, canyon), where the net and the bridge take over.
+  function buildPath() {
+    const S0 = -16, S1 = 162, DS = 0.5;
+    const across = [-1, -0.88, -0.74, -0.3, 0, 0.3, 0.74, 0.88, 1];   // fraction of the half width
+    const dirt = new THREE.Color(0xe6c27c), rut = new THREE.Color(0xd2aa66), plaza = new THREE.Color(0x92d874);
+    const c = new THREE.Color(), g = new THREE.Color(), v = new V3();
+    const pos = [], col = [], idx = [];
+    let prev = -1;
+    const noise = (s, l) => 0.5 + 0.25 * Math.sin(s * 0.9 + l * 2.1) + 0.25 * Math.sin(s * 2.3 - l * 1.3);
+    for (let s = S0; s <= S1 + 1e-6; s += DS) {
+      const half = 3.0 + 0.3 * Math.sin(s * 0.37) + 0.18 * Math.sin(s * 1.13 + 1.0);
+      const shift = 0.25 * Math.sin(s * 0.21 + 0.5);
+      let ok = true;
+      for (const f of across) if (terrainH(s, shift + f * half) < -0.3) { ok = false; break; }
+      if (!ok) { prev = -1; continue; }
+      const endFade = Math.min(1, (s - S0) / 4, (S1 - s) / 4);
+      const base = pos.length / 3;
+      for (const f of across) {
+        const l = shift + f * half;
+        localPos(s, l, terrainH(s, l) + 0.03).toArray(pos, pos.length);
+        if (Math.abs(l) < 11 && s > 20 && s < 56) g.copy(plaza); else H.tint(dirAt(s, l, v), g);
+        const a = Math.abs(f);
+        c.copy(Math.abs(a - 0.3) < 0.01 ? rut : dirt).multiplyScalar(0.94 + 0.08 * noise(s, l));
+        if (a > 0.8) c.lerp(g, 0.3);
+        const alpha = (a > 0.95 ? 0 : a > 0.8 ? 0.8 : 1) * endFade;
+        col.push(c.r, c.g, c.b, alpha);
+      }
+      if (prev >= 0) for (let k = 0; k < across.length - 1; k++) {
+        const a0 = prev + k, b0 = base + k;
+        idx.push(a0, b0, a0 + 1, a0 + 1, b0, b0 + 1);
+      }
+      prev = base;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 4));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const nrm = geo.attributes.normal;
+    if (nrm.getX(0) * pos[0] + nrm.getY(0) * pos[1] + nrm.getZ(0) * pos[2] < 0) {
+      for (let k = 0; k < idx.length; k += 3) { const t = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = t; }
+      geo.setIndex(idx); geo.computeVertexNormals();
+    }
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, depthWrite: false,
+      roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    m.renderOrder = -1;           // before the other see-through things (flags' halos, beams)
+    m.receiveShadow = true;
     group.add(m);
   }
 
@@ -569,6 +623,7 @@ const WindGardens = (() => {
     }
 
     if (FX.canyon) buildCanyon();
+    if (FX.path) buildPath();
     if (FX.markers) buildMarkers();
     if (FX.stones) buildStones(rand);
     if (FX.islands) buildIslands(rand);
