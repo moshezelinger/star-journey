@@ -175,6 +175,25 @@ const WindGardens = (() => {
     }
     col.needsUpdate = true;
   }
+  // Smooth ground (issue #5): one colour per vertex instead of per face, and normals that point
+  // straight out from the planet, so the meadow shades as a soft rolling surface instead of large
+  // flat triangles. The training plaza blends in over two units. Where the coarse sphere is
+  // hidden under a fine strip (trench, canyon) nothing shows, so those vertices are left as they are.
+  function smoothGround(geo, tint) {
+    const pos = geo.attributes.position, col = geo.attributes.color, v = new V3(), c = new THREE.Color();
+    const plaza = new THREE.Color(0x92d874), nrm = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
+      v.toArray(nrm, i * 3);
+      const k = coordsOf(v);
+      tint(v, c);
+      const pz = (1 - smooth(9, 12, Math.abs(k.l))) * smooth(18, 21, k.s) * (1 - smooth(54, 57, k.s));
+      if (pz > 0) c.lerp(plaza, pz);
+      col.setXYZ(i, c.r, c.g, c.b);
+    }
+    geo.setAttribute("normal", new THREE.BufferAttribute(nrm, 3));
+    col.needsUpdate = true;
+  }
   function exitDir() { return dirAt(LAYOUT.gate.s, LAYOUT.gate.l); }
 
   // ============================================================
@@ -339,35 +358,89 @@ const WindGardens = (() => {
     return g;
   }
 
+  // Enemies, second pass (issue #5): rounder, smooth-shaded original creatures. The returned
+  // parts (g, body, bang / wings) and their sizes are the ones the behaviour code animates.
+  const smoothMat = new Map();
+  function sm(color, opts) {                       // smooth-shaded, shared per colour
+    const key = color + (opts ? JSON.stringify(opts) : "");
+    let m = smoothMat.get(key);
+    if (!m) { m = H.mat(color, Object.assign({ flatShading: false, roughness: 0.7 }, opts || {})); smoothMat.set(key, m); }
+    return m;
+  }
+  function lathe(profile, seg) { return new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), seg || 18); }
+  function eye(parent, x, y, z, r, look) {
+    const e = add(parent, new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), sm(0xfffaf0)), x, y, z);
+    e.scale.set(1, 1.25, 0.7);
+    add(e, new THREE.Mesh(new THREE.SphereGeometry(r * 0.52, 10, 8), sm(0x1a1420, { roughness: 0.3 })), look * r * 0.15, -r * 0.05, r * 0.62);
+    add(e, new THREE.Mesh(new THREE.SphereGeometry(r * 0.16, 6, 5), sm(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.6 })), look * r * 0.3, r * 0.22, r * 0.95);
+    return e;
+  }
+
+  // a mushroom walker: rust cap with pale spots and a gill skirt, a cream stem, big eyes, stubby feet
   function makeGoomba() {
     const g = new THREE.Group();
     const body = new THREE.Group(); g.add(body);
-    add(body, new THREE.Mesh(new THREE.SphereGeometry(0.75, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), H.mat(0x8b5a2b)), 0, 0.5, 0);
-    add(body, cyl(0.42, 0.5, 0.5, 10, 0xf1d9b0), 0, 0.28, 0);
-    for (const x of [-0.28, 0.28]) {
-      add(body, new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), H.mat(0xffffff)), x, 0.62, 0.55);
-      add(body, new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 5), H.mat(0x111111)), x, 0.62, 0.7);
-      const f = add(body, box(0.4, 0.2, 0.6, 0x3a2416), x * 1.3, 0.1, 0.05); f.name = "foot";
+    add(body, new THREE.Mesh(lathe([[0, 0.12], [0.44, 0.14], [0.5, 0.3], [0.47, 0.5], [0.4, 0.62], [0, 0.66]]), sm(0xf8e8cc)), 0, 0, 0);
+    const cap = add(body, new THREE.Mesh(lathe([[0, 0.72], [0.6, 0.7], [0.84, 0.72], [0.9, 0.8], [0.82, 0.96], [0.6, 1.17], [0.3, 1.29], [0, 1.32]], 22), sm(0xd4582e, { roughness: 0.55 })), 0, 0, 0);
+    add(body, new THREE.Mesh(lathe([[0.83, 0.73], [0.6, 0.66], [0.38, 0.62]], 22), sm(0xe6cfa6, { side: THREE.DoubleSide })), 0, 0, 0);
+    // pale spots sitting on the cap surface (height from the cap profile at that radius)
+    const capProf = [[0, 1.32], [0.3, 1.29], [0.6, 1.17], [0.82, 0.96], [0.9, 0.8]];
+    const capY = (r) => { for (let i = 0; i < capProf.length - 1; i++) { const [r0, y0] = capProf[i], [r1, y1] = capProf[i + 1]; if (r <= r1) return y0 + (y1 - y0) * (r - r0) / (r1 - r0); } return 0.8; };
+    for (const [r, a] of [[0, 0], [0.42, 0.4], [0.45, 2.3], [0.5, 4.1], [0.7, 1.2], [0.72, 3.1], [0.68, 5.2], [0.25, 3.6]]) {
+      const x = Math.sin(a) * r, z = Math.cos(a) * r, y = capY(r);
+      const sp = add(cap, new THREE.Mesh(new THREE.SphereGeometry(r > 0.6 ? 0.09 : 0.12, 10, 6), sm(0xfff6e4)), x, y, z);
+      const n = new V3(x, (0.95 - y) * -1.2, z).normalize();      // roughly the cap normal there
+      if (r < 0.01) n.set(0, 1, 0);
+      sp.quaternion.setFromUnitVectors(new V3(0, 1, 0), n);
+      sp.position.addScaledVector(n, 0.035);
+      sp.scale.set(1, 0.4, 1);
     }
-    add(body, box(0.7, 0.08, 0.1, 0x2a1608), 0, 0.82, 0.62).rotation.z = 0.0;
+    eye(body, -0.17, 0.46, 0.38, 0.13, 1); eye(body, 0.17, 0.46, 0.38, 0.13, -1);
+    for (const x of [-0.17, 0.17]) {                // brows: they tilt in when it charges
+      const br = add(body, new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.06), sm(0x4a2a18)), x, 0.66, 0.45);
+      br.rotation.z = x > 0 ? 1.85 : 1.29;
+    }
+    add(body, new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.022, 6, 10, Math.PI), sm(0x5a2a1a)), 0, 0.32, 0.47).rotation.z = Math.PI;
+    for (const x of [-0.28, 0.28]) {
+      const f = add(body, new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), sm(0x5a3a22)), x, 0.02, 0.08);
+      f.scale.set(1, 0.8, 1.35); f.name = "foot";
+    }
     const bang = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), new THREE.MeshBasicMaterial({ color: 0xff3a2a }));
     bang.position.y = 2.2; bang.visible = false; g.add(bang);
     return { g, body, bang };
   }
 
+  // a winged turtle: a faceted olive shell with a cream rim, a pale belly, a beaked head and
+  // fanned feathered wings
   function makeKoopa() {
     const g = new THREE.Group();
     const body = new THREE.Group(); g.add(body);
-    add(body, new THREE.Mesh(new THREE.SphereGeometry(0.62, 12, 10), H.mat(0x35b34a)), 0, 0.9, 0);
-    add(body, new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), H.mat(0xffd94a)), 0, 1.45, 0.4);
-    add(body, new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 5), H.mat(0x111111)), -0.14, 1.52, 0.7);
-    add(body, new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 5), H.mat(0x111111)), 0.14, 1.52, 0.7);
-    add(body, box(0.5, 0.18, 0.3, 0xffb030), 0, 0.2, 0.2);
+    const shell = add(body, new THREE.Mesh(new THREE.IcosahedronGeometry(0.66, 1), H.mat(0x3f8a4a, { roughness: 0.5 })), 0, 0.95, -0.08);
+    shell.scale.set(1, 0.82, 1.08);
+    add(body, new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.07, 6, 20), sm(0xf0e0b4)), 0, 0.8, -0.05).rotation.x = Math.PI / 2;
+    add(body, new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), sm(0xf3e2b0)), 0, 0.78, 0.12).scale.set(0.95, 0.75, 0.75);
+    const skin = 0x8cc46a;
+    const head = add(body, new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), sm(skin)), 0, 1.38, 0.52);
+    head.scale.set(1, 0.95, 1.1);
+    add(head, new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.24, 8), sm(0xe8b048, { roughness: 0.4 })), 0, -0.06, 0.32).rotation.x = Math.PI / 2;
+    eye(head, -0.13, 0.08, 0.2, 0.1, 1); eye(head, 0.13, 0.08, 0.2, 0.1, -1);
+    add(body, new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.4, 10), sm(skin)), 0, 1.15, 0.38).rotation.x = 0.6;
+    for (const [x, z] of [[-0.35, 0.3], [0.35, 0.3], [-0.35, -0.35], [0.35, -0.35]]) {
+      const leg = add(body, new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), sm(skin)), x, 0.42, z);
+      leg.scale.set(1, 1.4, 1);
+      add(body, new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), sm(0xe8b048)), x, 0.22, z + 0.04).scale.set(1.1, 0.7, 1.4);
+    }
+    add(body, new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.3, 6), sm(skin)), 0, 0.6, -0.7).rotation.x = -2.0;
     const wings = [];
+    const featherM = sm(0xfdfaf2, { side: THREE.DoubleSide, roughness: 0.9 }), tipM = sm(0xd8e4ee, { side: THREE.DoubleSide, roughness: 0.9 });
     for (const sx of [-1, 1]) {
       const w = new THREE.Group(); w.position.set(sx * 0.55, 1.1, -0.1); body.add(w);
-      const m = add(w, box(0.1, 0.9, 1.3, 0xffffff), sx * 0.05, 0.3, 0);
-      m.position.set(sx * 0.1, 0.35, -0.35);
+      for (let k = 0; k < 4; k++) {                  // four fanned feathers, longest at the top
+        const len = 0.95 - k * 0.14;
+        const f = add(w, new THREE.Mesh(new THREE.SphereGeometry(0.5, 10, 6), k === 0 ? tipM : featherM), sx * 0.08, 0.3 + len * 0.35 - k * 0.06, -0.15 - k * 0.12);
+        f.scale.set(0.07, len * 0.5, 0.26);
+        f.rotation.x = -0.35 - k * 0.28;
+      }
       wings.push({ w, sx });
     }
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(1.5, 20),
@@ -498,16 +571,21 @@ const WindGardens = (() => {
   // ---------- grass clumps that sway with the shared wind (issue #5) ----------
   // Five thin blades, darker at the root; normals point up so the clump shades like soft grass.
   function grassClump() {
-    const pos = [], col = [], nrm = [], root = new THREE.Color(0x3f9a4a), tip = new THREE.Color(0xa6e47e);
+    // five blades, each a bent strip (a quad and a tip); one winding, drawn double-sided with the
+    // normal kept pointing up on both faces (see grassMat), so no blade turns black from behind
+    const pos = [], col = [], nrm = [], root = new THREE.Color(0x3f9a4a), mid = new THREE.Color(0x6cc25a), tip = new THREE.Color(0xb4e88a);
+    const push = (p, c) => { pos.push(p[0], p[1], p[2]); col.push(c.r, c.g, c.b); nrm.push(0, 1, 0); };
     for (let i = 0; i < 5; i++) {
-      const a = i / 5 * Math.PI * 2 + 0.3 * Math.sin(i * 7.1), w = 0.05, hgt = 0.38 + 0.18 * ((i * 37) % 5) / 4;
-      const ca = Math.cos(a), sa = Math.sin(a), lean = 0.14;
-      const A = [-sa * w + ca * 0.03, 0, ca * w + sa * 0.03], B = [sa * w + ca * 0.03, 0, -ca * w + sa * 0.03], T = [ca * lean, hgt, sa * lean];
-      // both windings with the same upward normal: a double-sided material would flip the
-      // normal on the back face and turn half the blades black
-      pos.push(...A, ...B, ...T, ...B, ...A, ...T);
-      for (let k = 0; k < 2; k++) col.push(root.r, root.g, root.b, root.r, root.g, root.b, tip.r, tip.g, tip.b);
-      for (let k = 0; k < 6; k++) nrm.push(0, 1, 0);
+      const a = i / 5 * Math.PI * 2 + 0.4 * Math.sin(i * 7.1), hgt = 0.42 + 0.22 * ((i * 37) % 5) / 4;
+      const ca = Math.cos(a), sa = Math.sin(a), w = 0.055, bend = 0.1 + 0.06 * (i % 3);
+      const off = 0.04, bx = ca * off, bz = sa * off;
+      const A = [bx - sa * w, 0, bz + ca * w], B = [bx + sa * w, 0, bz - ca * w];
+      const mh = hgt * 0.55, mo = bend * 0.35;
+      const C = [bx + ca * mo - sa * w * 0.7, mh, bz + sa * mo + ca * w * 0.7], D = [bx + ca * mo + sa * w * 0.7, mh, bz + sa * mo - ca * w * 0.7];
+      const T = [bx + ca * bend * 1.6, hgt, bz + sa * bend * 1.6];
+      push(A, root); push(B, root); push(C, mid);
+      push(B, root); push(D, mid); push(C, mid);
+      push(C, mid); push(D, mid); push(T, tip);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -519,9 +597,12 @@ const WindGardens = (() => {
   let grassM = null;
   function grassMat() {
     if (grassM) return grassM;
-    grassM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+    grassM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide });
     grassM.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = grassU.uTime; sh.uniforms.uWind = grassU.uWind;
+      // keep the up normal on the back face too (three.js flips it for double-sided materials)
+      sh.fragmentShader = sh.fragmentShader.replace("#include <normal_fragment_begin>",
+        "vec3 normal = normalize( vNormal ); vec3 geometryNormal = normal;");
       sh.vertexShader = "uniform float uTime; uniform float uWind;\n" + sh.vertexShader.replace("#include <begin_vertex>",
         "#include <begin_vertex>\n" +
         "#ifdef USE_INSTANCING\n float ph = dot(instanceMatrix[3].xyz, vec3(0.31, 0.17, 0.23));\n#else\n float ph = 0.0;\n#endif\n" +
@@ -529,6 +610,49 @@ const WindGardens = (() => {
         " transformed.x += sw * sin(uTime * 2.3 + ph);\n transformed.z += sw * 0.6 * sin(uTime * 1.7 + ph * 1.3);");
     };
     return grassM;
+  }
+
+  // ---------- merge static scenery (docs/performance-rules.md) ----------
+  // Every mesh that never moves and uses a plain shared kit material is baked into one mesh per
+  // material: planks, posts, rails, the trestle, the tower trim, the housing, flag poles. Anything
+  // under a moving or collider root (blades, lever, characters, enemies, the crate, the tower and
+  // roof, the balcony, the pedestal) is left alone, so animation and camera ray tests still work.
+  function mergeStatic(keepRoots) {
+    const kitSet = new Set(kitMat.values()), keep = new Set(keepRoots);
+    const byMat = new Map(), victims = [];
+    group.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+    const walk = (o) => {
+      if (keep.has(o)) return;
+      if (o.isMesh && !o.isInstancedMesh && kitSet.has(o.material) && !o.userData.noMerge) {
+        const m = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+        let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+        g.applyMatrix4(m);
+        if (!byMat.has(o.material)) byMat.set(o.material, []);
+        byMat.get(o.material).push(g);
+        victims.push(o);
+      }
+      for (const c of o.children.slice()) walk(c);
+    };
+    for (const c of group.children.slice()) walk(c);
+    for (const v of victims) v.parent.remove(v);
+    let merged = 0;
+    for (const [mat, geos] of byMat) {
+      let n = 0; for (const g of geos) n += g.attributes.position.count;
+      const pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3);
+      let k = 0;
+      for (const g of geos) {
+        pos.set(g.attributes.position.array, k * 3);
+        if (g.attributes.normal) nrm.set(g.attributes.normal.array, k * 3);
+        k += g.attributes.position.count; g.dispose();
+      }
+      const bg = new THREE.BufferGeometry();
+      bg.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      bg.setAttribute("normal", new THREE.BufferAttribute(nrm, 3));
+      bg.computeBoundingSphere();
+      group.add(new THREE.Mesh(bg, mat)); merged++;
+    }
+    return { meshes: victims.length, into: merged };
   }
 
   // ---------- the safety net over the training trench (issue #5) ----------
@@ -667,15 +791,24 @@ const WindGardens = (() => {
       if (Math.abs(l) < 14 && s > 118 && s < 160) return false;
       return true;
     };
-    function scatterNear(def, count, sMin, sMax, h, sc0, sc1, test, lMax) {
-      test = test || ok; lMax = lMax || 90;
+    const _ic = new THREE.Color();
+    // grass colour per clump: big soft patches from yellow-green to deep green, a little noise
+    const grassTint = (s, l, c) => {
+      const n = Math.sin(s * 0.11 + l * 0.07) * 0.5 + Math.sin(s * 0.031 - l * 0.13 + 1.3) * 0.5;
+      const j = 0.9 + 0.2 * rand();                       // a multiplier on the blade colours
+      c.setRGB((0.92 + 0.18 * n) * j, (1.0 + 0.04 * n) * j, (0.88 - 0.12 * n) * j);
+      return c;
+    };
+    function scatterNear(def, count, sMin, sMax, h, sc0, sc1, test, lMax, opts) {
+      test = test || ok; lMax = lMax || 90; opts = opts || {};
       const meshes = def.map(pt => { const m = new THREE.InstancedMesh(pt.geo, pt.mat, count); m.userData.noCast = !!pt.noCast; group.add(m); return m; });
       const loc = def.map(pt => new THREE.Matrix4().makeTranslation(0, pt.y || 0, 0));
       const base = new THREE.Matrix4(), out = new THREE.Matrix4(), q = new THREE.Quaternion(), spin = new THREE.Quaternion();
       const sc = new V3(), up = new V3(0, 1, 0);
       let n = 0, guard = 0;
       while (n < count && guard++ < count * 20) {
-        const s = sMin + rand() * (sMax - sMin), l = (rand() * 2 - 1) * lMax;
+        const u = rand() * 2 - 1;
+        const s = sMin + rand() * (sMax - sMin), l = Math.sign(u) * Math.pow(Math.abs(u), opts.bias || 1) * lMax;
         if (!test(s, l)) continue;
         const dir = dirAt(s, l);
         const k = sc0 + Math.pow(rand(), 2.2) * (sc1 - sc0);
@@ -683,13 +816,16 @@ const WindGardens = (() => {
         sc.set(k, k, k);
         base.compose(dir.clone().multiplyScalar(R + terrainH(s, l) + h * k), q, sc);
         meshes.forEach((m, i) => { out.multiplyMatrices(base, loc[i]); m.setMatrixAt(n, out); });
+        if (opts.tint) { opts.tint(s, l, _ic); meshes.forEach(m => m.setColorAt(n, _ic)); }
         n++;
       }
-      meshes.forEach(m => { m.count = n; m.instanceMatrix.needsUpdate = true; });
+      meshes.forEach(m => { m.count = n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; });
     }
     scatterNear(parts.tree, 260, -60, 230, 0, 1.3, 4.2);
-    scatterNear(parts.flower, 900, -40, 200, 0, 1.0, 1.6);
-    scatterNear(parts.tuft, 1400, -40, 200, 0, 1.0, 2.2);
+    scatterNear(parts.flower, Math.round(900 * Math.max(0.6, QUALITY.grass)), -40, 200, 0, 1.0, 1.6, null, 90, { bias: 1.4 });
+    const GQ = QUALITY.grass;
+    if (FX.path) scatterNear(parts.tuft, Math.round(5200 * GQ), -40, 200, 0, 0.9, 2.0, null, 90, { bias: 1.7, tint: grassTint });
+    else scatterNear(parts.tuft, 1400, -40, 200, 0, 1.0, 2.2);
     if (FX.path) {
       // low grass along both path edges: foreground depth, clear of the path itself so the
       // hero's feet and the path edge stay visible
@@ -702,7 +838,7 @@ const WindGardens = (() => {
         if (s > 21 && s < 25 && a < 6) return false;              // around the punch crate
         return true;
       };
-      scatterNear(parts.tuft, 900, -14, 118, 0, 0.55, 1.05, edge, 9);
+      scatterNear(parts.tuft, Math.round(2200 * GQ), -14, 118, 0, 0.55, 1.05, edge, 9, { tint: grassTint });
     }
     scatterNear(parts.rock, 160, -40, 200, 0.1, 0.8, 4.5);
 
@@ -949,6 +1085,8 @@ const WindGardens = (() => {
     // ---------- enemies ----------
     goomba = makeGoomba(); group.add(goomba.g);
     koopa = makeKoopa(); group.add(koopa.g); group.add(koopa.shadow);
+
+    if (FX.merge) S.mergeInfo = mergeStatic([crateMesh, bladeRoot, lever.g, luigi.g, cart, goomba.g, koopa.g, koopa.shadow, tower, roof, balG, pedMesh, beam]);
 
     // a few soft clouds well away from the path
     const cloudM = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, opacity: 0.8, flatShading: true });
@@ -1514,6 +1652,7 @@ const WindGardens = (() => {
     get enemies() { return { goomba: S.goomba, koopa: S.koopa }; },
     mill: () => ({ angle: S.blades.angle, w: S.blades.w, state: S.blades.state, ladderOff: S.ladderOff, climbReady: S.climbReady }),
     setBladeAngle(a) { S.blades.angle = a; },
+    models: () => ({ goomba: goomba && goomba.g, koopa: koopa && koopa.g }),
     get crateGone() { return !!crateSolid.gone; },
     get splits() { return S.splits || []; },
     get rescueCount() { return S.rescueCount || 0; },
@@ -1527,7 +1666,7 @@ const WindGardens = (() => {
   function attach(e) { env = e; reset(); }
 
   return {
-    configure, shapeGround, exitDir, build, attach, reset, update, query, drift, constrain,
+    configure, shapeGround, smoothGround, exitDir, build, attach, reset, update, query, drift, constrain,
     punchHit, aim, scripted, objective, debug, colliders, cameraHint, cameraFloor, cameraShot, cameraFocus,
     respawn: (P, hooks, restoreHealth) => respawn(P, hooks, restoreHealth),
     isLocked: () => S.locked,

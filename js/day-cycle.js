@@ -77,13 +77,12 @@ const DayCycle = (() => {
 
   // Sun shadows (issue #5): a shadow map that follows the hero, so trees, the bridge, the mill
   // and the hero himself shade the ground. Off on other planets and with ?fx=-shadows.
-  const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
   function setupShadows() {
     const { sun, renderer } = refs;
     if (!renderer) return;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    sun.shadow.mapSize.set(touch ? 1024 : 2048, touch ? 1024 : 2048);
+    sun.shadow.mapSize.set(QUALITY.shadowMap, QUALITY.shadowMap);
     const sc = sun.shadow.camera;
     sc.left = -38; sc.right = 38; sc.top = 38; sc.bottom = -38; sc.near = 1; sc.far = 320;
     sc.updateProjectionMatrix();

@@ -338,7 +338,7 @@ const WORLD_SCALE = 10;
 camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 15000);
 
 renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY.pixelRatioCap));
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
@@ -517,7 +517,9 @@ function buildPlanet(def, index) {
   const bodyGeo = new THREE.IcosahedronGeometry(def.radius, detail);
   paintGround(bodyGeo, def, index);
   if (def.theme === "wind") { WindGardens.configure(def); WindGardens.shapeGround(bodyGeo); }
-  const body = new THREE.Mesh(bodyGeo, mat(0xffffff, { roughness: 0.95, vertexColors: true }));
+  const smoothWind = def.theme === "wind" && FX.path && FX.canyon;
+  if (smoothWind) WindGardens.smoothGround(bodyGeo, groundTint(def, index));
+  const body = new THREE.Mesh(bodyGeo, mat(0xffffff, { roughness: 0.95, vertexColors: true, flatShading: !smoothWind }));
   group.add(body);
 
   const glow = new THREE.Mesh(
@@ -672,10 +674,46 @@ function buildPlanet(def, index) {
     p.grand = { holder: holder, star: star, dir: dir.clone(), taken: false };
   }
 
+  // Level of detail (docs/performance-rules.md): everything but the ground sphere and its glow goes
+  // into one sub-group, which is drawn only while the hero is on or near this planet. From afar
+  // a planet is just its coloured sphere, so the cost of a level does not add up across levels.
+  const lod = new THREE.Group();
+  for (const c of group.children.slice()) if (c !== body && c !== glow) lod.add(c);
+  group.add(lod);
+  p.body = body; p.detail = lod;
+
   planets.push(p);
   return p;
 }
 PLANET_DEFS.forEach(buildPlanet);
+
+// Full detail for the planet the hero is on, any planet he is close to, and both ends of a launch.
+function updatePlanetDetail() {
+  for (const p of planets) {
+    const near = p === active || P.pos.distanceTo(p.center) - p.radius < p.radius * 1.5 ||
+      (state === S.TRANSITION && transition && planets[transition.next] === p);
+    if (p.detail.visible !== near) p.detail.visible = near;
+  }
+}
+
+// Automatic resolution (docs/performance-rules.md): if frames run slow for two seconds the render
+// resolution steps down, and steps back up after a stretch of fast frames. Off with ?q= and in tests.
+const AutoRes = (() => {
+  const base = Math.min(window.devicePixelRatio, QUALITY.pixelRatioCap);
+  const min = Math.max(0.5, base * QUALITY.minPixelRatio);
+  let pr = base, avg = 1 / 60, timer = 0;
+  return {
+    update(rawDt) {
+      if (!QUALITY.adaptive || rawDt <= 0 || rawDt > 0.25 || document.hidden) return;
+      avg += (rawDt - avg) * 0.05;
+      timer += rawDt;
+      if (avg > 1 / 45 && timer > 2 && pr > min) { pr = Math.max(min, pr - 0.25); renderer.setPixelRatio(pr); timer = 0; }
+      else if (avg < 1 / 70 && timer > 6 && pr < base) { pr = Math.min(base, pr + 0.25); renderer.setPixelRatio(pr); timer = 0; }
+      else if (timer > 6) timer = 0;
+    },
+    get pixelRatio() { return pr; }
+  };
+})();
 { // the sun turns over the middle of the route (s = 70)
   const mid = WindGardens.debug.dirAt(70, 0), ahead = WindGardens.debug.dirAt(71, 0);
   DayCycle.configure(mid, ahead.sub(mid));
@@ -2094,7 +2132,9 @@ function updateMenuCamera(dt) {
 
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const rawDt = clock.getDelta();
+  const dt = Math.min(rawDt, 0.05);
+  AutoRes.update(rawDt);
   const t = clock.elapsedTime;
 
   // ambient spin for shards, gates, spinners
@@ -2126,6 +2166,7 @@ function animate() {
   Particles.update(dt);
   Audio.update();
   starfield.position.copy(camera.position);
+  updatePlanetDetail();
   DayCycle.apply(camera, P.pos, active && active.center);
   updateHeroShadow();
   heroNightGlow();
@@ -2207,7 +2248,7 @@ landOnPlanet(0);
 state = S.MENU;
 // test/QA access (see docs/wind-gardens.md)
 let dbgPause = false;
-window.__dbg = { P, camera, camDir, WindGardens, set pause(v) { dbgPause = v; },
+window.__dbg = { P, camera, camDir, WindGardens, QUALITY, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },
   get ready() { return !!player.userData.ready; },
   // place the hero at route coordinates (s, l, height above the base sphere), facing +s
   place(s, l, h, back) {
