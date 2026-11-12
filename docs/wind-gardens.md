@@ -59,8 +59,27 @@ How the rotation works: the planet stays still and the sun direction turns aroun
 
 - Canyon: its own fine mesh (`buildCanyon`, 0.5 units along the route, finer near the route across it), displaced by the same `terrainH` the physics uses, with strata colours that darken and turn blue with depth. The coarse planet sphere is pushed out of sight under the strip.
 - Windmill: four broad blades. Three have a lattice frame and one long cloth sail that billows with `GameShared.wind`. The ladder blade has no sail, glowing rungs and a red pennant at the tip. The tower has a stone foot, a door and three windows.
+- Windmill, second pass: an eight-sided tower (corners 4% outside the collision cylinder, a flat face toward the route) with timber corner battens and two bands, a stone foot with three steps up to a framed door, framed windows with sills, an eight-sided cap with a deep overhang on a timber curb and a gold finial. A timber housing with a small pitched roof covers the shaft where it leaves the tower (the shaft used to stop short of the wall). The hub has a cap and bolts that turn with the blades.
+- Balcony: a plank deck on joists, an open rail on the tower side and the outer side so the brother stays in view, and no rail on the entry side (toward the hub) or the blade side. Below it, a timber trestle with cross braces down to the ground. The trestle is not a camera collider. Before and after: `docs/frames/windmill-before-after.jpg`.
 - Depth: light stones along the path edges (the route also reads in greyscale), the path is lighter and the grass darker than before, and twelve low-contrast islands float far behind the route.
-- Each effect can be switched off for measurement: `?fx=-day,-canyon,-windmill,-markers,-islands,-stones`.
+- Path: its own ribbon mesh (`buildPath`) that follows `terrainH` every 0.5 units, wobbles at the edges and fades into the grass through vertex alpha. The coarse planet triangles under it keep the grass colour. It stops where the ground dips (trench, canyon).
+- Sky: a dome that follows the camera (`DayCycle`), zenith in the key frame's sky colour, horizon in the fog colour, with a soft glow around the sun. Far terrain now fades into the sky instead of a flat backdrop.
+- Trench and net: the trench has its own fine strip like the canyon (`TRENCH_STRIP`), since the coarse triangles covered the trench floor. The floor is a darker brown, and a light rope grid (`buildNet`, a canvas texture) lies 0.08 above its lower part. The net, the grass and the canyon read apart in greyscale (`docs/frames/net-and-gap.jpg`).
+- Grass: the tufts are clumps of five thin blades (`grassClump`) that sway with `GameShared.wind` in the vertex shader (one shared material, the instance position sets the phase). 900 smaller clumps line both path edges from 3.9 units out, so the hero's feet and the path edge stay clear. Grass does not cast shadows, to keep the shadow pass cheap.
+- Shared kit: `box()` and `cyl()` reuse one geometry per size and one material per plain colour (planks, posts, rails, crate, balcony, blade frames). Parts with options (glowing rungs, the lever knob) keep their own material because they change at run time. On the Wind Gardens group this took materials from 231 to 100 and geometries from 393 to 267; draw calls stay at about 349, since the meshes are not merged.
+- Pedestal: a dry-stone block, staggered courses of stones (one instanced mesh with per-stone colour) flush with the collision box, with a grass cap.
+- Enemies, second pass: smooth-shaded original creatures. The mushroom walker has a rust cap with pale spots and a gill skirt, a cream stem, large eyes and stubby feet; the winged turtle has a faceted olive shell with a cream rim, a beaked head, four legs and fanned feathered wings. Sizes and the animated parts are unchanged.
+- Ground and grass, second pass: the meadow uses one colour per vertex and normals straight out from the planet, so it shades as a soft surface instead of large flat triangles. Grass clumps are bent five-blade strips, double-sided with the normal kept up, with a colour per clump in large soft patches. 5200 clumps (scaled by `QUALITY.grass`) are spread with a bias toward the route, plus 2200 along the path edges. `docs/frames/enemies-and-grass.jpg`.
+- Night: the path glows faintly (emissive up to 0.16 at night), so the route stays a lighter band in the dark.
+- Shadows: the sun casts a shadow map (2048, 1024 on touch screens) over 76×76 units centred on the hero. Trees, flowers, the bridge, the mill, enemies and the hero cast; the ground only receives. The canyon and trench strips neither cast nor receive, since their self-shadow ended in the straight edge of the shadow map. A soft round shadow also sits straight under the hero on the first surface below him and fades with height, so the landing spot reads during a jump at any time of day.
+- Each effect can be switched off for measurement: `?fx=-day,-canyon,-windmill,-markers,-islands,-stones,-path,-shadows,-sky`.
+
+## Performance (docs/performance-rules.md)
+
+- Level of detail: each planet's decoration sits in `p.detail`, drawn only on or near that planet (`updatePlanetDetail`).
+- `mergeStatic` bakes every static part with a plain kit material into one mesh per material: draw calls went from 429 to 310 with no visible change.
+- Quality tiers (`QUALITY` in `js/tuning.js`, `?q=low|medium|high`) set the shadow map, grass density and pixel-ratio cap. Automatic resolution steps the pixel ratio down when frames run slow (off with `?q=` and in tests).
+- `?tune` shows live fps, slowest frame, draw calls, triangles, tier and resolution.
 
 ## Tuning (#3, #4, #8)
 

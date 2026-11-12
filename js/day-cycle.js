@@ -48,8 +48,50 @@ const DayCycle = (() => {
     return x;
   }
 
-  // refs: { scene, sun, hemi, rim, stars, sunDisc }
-  function attach(r) { refs = r; }
+  // A sky dome (issue #5): the zenith takes the key frame's sky colour and the horizon the fog
+  // colour, so far terrain melts into the sky instead of stopping at a flat backdrop. A soft
+  // glow sits around the sun. It follows the camera and is drawn first, without depth.
+  let dome = null;
+  function makeDome() {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, glow: { value: new THREE.Color() },
+        up: { value: new V3(0, 1, 0) }, sunDir: { value: new V3(0, 1, 0) }, glowI: { value: 0 } },
+      vertexShader: "varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: [
+        "uniform vec3 top; uniform vec3 horizon; uniform vec3 glow; uniform vec3 up; uniform vec3 sunDir; uniform float glowI;",
+        "varying vec3 vDir;",
+        "void main(){",
+        "  vec3 d = normalize(vDir); float h = dot(d, up);",
+        "  vec3 c = mix(horizon, top, smoothstep(-0.02, 0.55, h));",
+        "  float sd = max(dot(d, sunDir), 0.0);",
+        "  c += glow * glowI * (0.55 * pow(sd, 6.0) + 0.45 * pow(sd, 48.0));",
+        "  gl_FragColor = vec4(c, 1.0);",
+        "}"].join("\n"),
+      side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false
+    });
+    dome = new THREE.Mesh(new THREE.SphereGeometry(2000, 32, 16), mat);
+    dome.frustumCulled = false; dome.renderOrder = -10;
+    dome.visible = false;
+    refs.scene.add(dome);
+  }
+
+  // Sun shadows (issue #5): a shadow map that follows the hero, so trees, the bridge, the mill
+  // and the hero himself shade the ground. Off on other planets and with ?fx=-shadows.
+  function setupShadows() {
+    const { sun, renderer } = refs;
+    if (!renderer) return;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    sun.shadow.mapSize.set(QUALITY.shadowMap, QUALITY.shadowMap);
+    const sc = sun.shadow.camera;
+    sc.left = -38; sc.right = 38; sc.top = 38; sc.bottom = -38; sc.near = 1; sc.far = 320;
+    sc.updateProjectionMatrix();
+    sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.04;
+    refs.scene.add(sun.target);
+  }
+
+  // refs: { scene, renderer, sun, hemi, rim, stars, sunDisc }
+  function attach(r) { refs = r; if (FX.sky) makeDome(); if (FX.shadows) setupShadows(); }
   // up: unit direction of the middle of the route; forward: the route's +s direction there
   function configure(up, forward) { C.copy(up).normalize(); F.copy(forward).projectOnPlane(C).normalize(); }
   function reset() { t = 0; }
@@ -77,10 +119,15 @@ const DayCycle = (() => {
     return warp(x, k);
   }
 
-  function apply(camera) {
+  const _up = new V3(), _glow = new THREE.Color();
+  // focus: the point the shadow map centres on (the hero); center: the planet centre
+  function apply(camera, focus, center) {
     if (!refs) return;
     const { scene, sun, hemi, rim, stars, sunDisc } = refs;
-    if (!on) {                                       // other planets and the menu: the old night sky
+    if (FX.shadows && sun.castShadow !== on) sun.castShadow = on;
+    if (dome) dome.visible = on;
+    if (!on) {
+      sun.target.position.set(0, 0, 0);                                       // other planets and the menu: the old night sky
       scene.background.setHex(0x05060f);
       scene.fog.near = 1e6; scene.fog.far = 1e6 + 1;
       sun.color.setHex(0xfff1d0); sun.intensity = 1.05; sun.position.set(60, 90, 40);
@@ -105,13 +152,28 @@ const DayCycle = (() => {
     // haze: far in daylight, closer at night so the far planet side fades into the dark
     scene.fog.near = 70 - 30 * dark; scene.fog.far = 520 - 260 * dark;
     sun.color.copy(k.sun); sun.intensity = k.sunI;
-    sun.position.copy(sunDir).multiplyScalar(500);
+    if (focus) {               // same direction as before; centred on the hero for the shadow map
+      sun.target.position.copy(focus);
+      sun.position.copy(focus).addScaledVector(sunDir, 150);
+    } else { sun.target.position.set(0, 0, 0); sun.position.copy(sunDir).multiplyScalar(500); }
     hemi.color.copy(k.hs); hemi.groundColor.copy(k.hg);
     hemi.intensity = Math.max(TUNE.day.minAmbient, k.hI - 0.3 * dark);
     hemi.position.copy(C);
     rim.intensity = k.rimI;
     stars.material.opacity = 0.9 * k.stars;
     stars.visible = k.stars > 0.01;
+    if (dome) {
+      const u = dome.material.uniforms;
+      dome.position.copy(camera.position);
+      u.top.value.copy(scene.background);
+      u.horizon.value.copy(scene.fog.color);
+      if (center) _up.copy(camera.position).sub(center).normalize(); else _up.copy(C);
+      u.up.value.copy(_up);
+      u.sunDir.value.copy(sunDir);
+      _glow.copy(k.sun).lerp(new THREE.Color(0xffffff), 0.25);
+      u.glow.value.copy(_glow);
+      u.glowI.value = 0.55 * Math.max(0, Math.min(1, (elev + 8) / 10)) * (1 - 0.6 * Math.max(0, Math.min(1, (elev - 15) / 40)));
+    }
     // a visible sun disc, following the camera like the starfield
     sunDisc.visible = elev > -6;
     if (sunDisc.visible) {

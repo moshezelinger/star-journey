@@ -64,12 +64,31 @@ const TUNE = (() => {
 
 /* Visual effects that can be switched off one by one, to measure what each costs:
    index.html?fx=-canyon,-islands   (a leading minus turns that effect off).
-   Names: day, canyon, windmill, markers, islands, stones. */
+   Names: day, canyon, windmill, markers, islands, stones, path, shadows, sky, merge. */
 const FX = (() => {
-  const fx = { day: true, canyon: true, windmill: true, markers: true, islands: true, stones: true };
+  const fx = { day: true, canyon: true, windmill: true, markers: true, islands: true, stones: true, path: true, shadows: true, sky: true, merge: true };
   try {
     const m = /[?&]fx=([^&]*)/.exec(location.search);
     if (m) decodeURIComponent(m[1]).split(",").forEach(k => { k = k.trim(); if (k[0] === "-" && k.slice(1) in fx) fx[k.slice(1)] = false; });
   } catch (e) {}
   return fx;
+})();
+
+/* Quality tiers (docs/performance-rules.md). One switch for everything that trades frame rate for looks.
+   index.html?q=low|medium|high picks a tier and turns off the automatic resolution step-down.
+   Without it: touch screens start at medium, everything else at high, and the game lowers its
+   render resolution by itself if frames run slow (never in automated tests: navigator.webdriver). */
+const QUALITY = (() => {
+  const TIERS = {
+    high:   { name: "high",   shadowMap: 2048, grass: 1.0,  pixelRatioCap: 2,   minPixelRatio: 0.75 },
+    medium: { name: "medium", shadowMap: 1024, grass: 0.6,  pixelRatioCap: 1.5, minPixelRatio: 0.6 },
+    low:    { name: "low",    shadowMap: 0,    grass: 0.35, pixelRatioCap: 1,   minPixelRatio: 0.5 }
+  };
+  let pick = null;
+  try { const m = /[?&]q=(low|medium|high)\b/.exec(location.search); if (m) pick = m[1]; } catch (e) {}
+  const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  const q = Object.assign({}, TIERS[pick || (touch ? "medium" : "high")]);
+  q.adaptive = !pick && !(typeof navigator !== "undefined" && navigator.webdriver);
+  if (!q.shadowMap) FX.shadows = false;
+  return q;
 })();

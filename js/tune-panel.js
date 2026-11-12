@@ -23,7 +23,7 @@ const TunePanel = (() => {
     day: { _title: "Day and night", length: [30, 900, 10, "full cycle s"], startPhase: [0, 1, 0.01, "start offset (restart)"], morningHold: [0, 0.9, 0.05, "linger in daylight"],
       nightDarkness: [0, 1, 0.05, "night darkness"], minAmbient: [0.1, 0.8, 0.02, "min ambient"] }
   };
-  let el = null, gear = null, info = null, splitsEl = null, open = false, gapAtLoad = TUNE.bridge.gap;
+  let el = null, gear = null, info = null, perfEl = null, splitsEl = null, open = false, gapAtLoad = TUNE.bridge.gap;
   const inputs = [];
 
   function fmt(v, step) { const d = step >= 1 ? 0 : step >= 0.1 ? 1 : 2; return Number(v).toFixed(d); }
@@ -52,6 +52,9 @@ const TunePanel = (() => {
     head.innerHTML = `<b>Tuning</b> <span class="note">(\` to close)</span><div class="bar" style="margin-top:6px">
       <button data-a="save">Save</button><button data-a="defaults">Defaults</button><button data-a="copy">Copy values</button><button data-a="close">Close</button></div>`;
     el.appendChild(head);
+    const perf = document.createElement("div");      // live numbers for measuring on a real device
+    perf.innerHTML = `<h3>Performance</h3><div id="tunePerf" class="note"></div>`;
+    el.appendChild(perf);
     const day = document.createElement("div");
     day.innerHTML = `<h3>Time of day</h3><div id="tuneDay" class="note"></div><div class="bar">
       <button data-m="morning">Morning</button><button data-m="noon">Noon</button><button data-m="dusk">Dusk</button><button data-m="night">Night</button></div>`;
@@ -75,6 +78,7 @@ const TunePanel = (() => {
       <div class="note">Targets for a first run: 3 + 5 + 5 + 7 minutes (landing to training, training to bridge, bridge to windmill, windmill to rescue).</div>`;
     el.appendChild(sp);
     document.body.appendChild(el);
+    perfEl = el.querySelector("#tunePerf");
     info = el.querySelector("#tuneDay"); splitsEl = el.querySelector("#tuneSplits");
     el.addEventListener("click", e => {
       const b = e.target.closest("button"); if (!b) return;
@@ -98,10 +102,22 @@ const TunePanel = (() => {
   }
 
   function mmss(t) { const m = Math.floor(t / 60), s = Math.floor(t % 60); return m + ":" + String(s).padStart(2, "0"); }
-  let last = 0;
+  let last = 0, frames = 0, worst = 0, prevT = 0;
   function update() {
+    const t0 = performance.now();
+    if (prevT) { frames++; worst = Math.max(worst, t0 - prevT); }
+    prevT = t0;
     if (!open || !el) return;
-    const now = performance.now(); if (now - last < 250) return; last = now;
+    const now = t0; if (now - last < 500) return;
+    if (perfEl && typeof renderer !== "undefined") {
+      const fps = frames * 1000 / (now - last), ri = renderer.info.render;
+      const q = typeof QUALITY !== "undefined" ? QUALITY.name + (QUALITY.adaptive ? ", auto" : "") : "";
+      const pr = window.__dbg ? window.__dbg.pixelRatio : renderer.getPixelRatio();
+      perfEl.innerHTML = `${fps.toFixed(0)} fps, slowest frame ${worst.toFixed(0)} ms<br>` +
+        `draw calls ${ri.calls}, triangles ${(ri.triangles / 1000).toFixed(0)}k<br>` +
+        `quality ${q}, resolution ×${pr.toFixed(2)}`;
+    }
+    frames = 0; worst = 0; last = now;
     if (window.DayCycle) {
       const st = DayCycle.state;
       info.textContent = `${st.name}, sun ${st.elev.toFixed(0)}°, ${(st.phase * 100).toFixed(0)}% through the day (${mmss(DayCycle.time % TUNE.day.length)} of ${mmss(TUNE.day.length)})`;

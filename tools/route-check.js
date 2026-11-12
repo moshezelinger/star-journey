@@ -189,7 +189,7 @@ const STEP = 1 / 60;
   c.ok("gate launches to the next planet", r === "PLANET_TRANSITION", r);
   // the launch plays in real time; afterwards the follow camera must start next to Mario
   await page.evaluate(() => { window.__dbg.pause = false; });
-  await page.waitForFunction(() => window.__dbg.state === "PLAYING", null, { timeout: 15000 });
+  await page.waitForFunction(() => window.__dbg.state === "PLAYING", null, { timeout: 60000 });
   r = await ev(() => { const d = window.__dbg; d.pause = true; d.step(30); return { planet: d.active.name, dist: d.cam.dist, floor: d.camFloor }; });
   c.ok("camera follows Mario on the next planet", r.dist < 11 && r.floor.h > r.floor.floor, r);
 

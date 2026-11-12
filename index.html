@@ -338,7 +338,7 @@ const WORLD_SCALE = 10;
 camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 15000);
 
 renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY.pixelRatioCap));
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
@@ -375,7 +375,7 @@ const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(70, 20, 12),
   new THREE.MeshBasicMaterial({ color: 0xfff1d0, fog: false, depthWrite: false }));
 sunDisc.frustumCulled = false; sunDisc.renderOrder = -1;
 scene.add(sunDisc);
-DayCycle.attach({ scene, sun, hemi, rim, stars: starfield, sunDisc });
+DayCycle.attach({ scene, renderer, sun, hemi, rim, stars: starfield, sunDisc });
 
 // ---------- shared materials ----------
 const MAT = {
@@ -517,7 +517,9 @@ function buildPlanet(def, index) {
   const bodyGeo = new THREE.IcosahedronGeometry(def.radius, detail);
   paintGround(bodyGeo, def, index);
   if (def.theme === "wind") { WindGardens.configure(def); WindGardens.shapeGround(bodyGeo); }
-  const body = new THREE.Mesh(bodyGeo, mat(0xffffff, { roughness: 0.95, vertexColors: true }));
+  const smoothWind = def.theme === "wind" && FX.path && FX.canyon;
+  if (smoothWind) WindGardens.smoothGround(bodyGeo, groundTint(def, index));
+  const body = new THREE.Mesh(bodyGeo, mat(0xffffff, { roughness: 0.95, vertexColors: true, flatShading: !smoothWind }));
   group.add(body);
 
   const glow = new THREE.Mesh(
@@ -544,6 +546,13 @@ function buildPlanet(def, index) {
   // ---- decorations per theme ----
   if (def.theme === "wind") {
     WindGardens.build(p, group, { mat: mat, rng: rng, makeBeam: makeBeam, tint: groundTint(def, index) });
+    // sun shadows (issue #5): solid scenery casts and receives; the ground only receives
+    if (FX.shadows) group.traverse(o => {
+      if (!o.isMesh) return;
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      o.receiveShadow = !o.userData.noReceive;
+      o.castShadow = o !== body && !(m && m.transparent) && !o.userData.noCast;
+    });
   }
 
   if (def.theme === "meadow") {
@@ -665,10 +674,46 @@ function buildPlanet(def, index) {
     p.grand = { holder: holder, star: star, dir: dir.clone(), taken: false };
   }
 
+  // Level of detail (docs/performance-rules.md): everything but the ground sphere and its glow goes
+  // into one sub-group, which is drawn only while the hero is on or near this planet. From afar
+  // a planet is just its coloured sphere, so the cost of a level does not add up across levels.
+  const lod = new THREE.Group();
+  for (const c of group.children.slice()) if (c !== body && c !== glow) lod.add(c);
+  group.add(lod);
+  p.body = body; p.detail = lod;
+
   planets.push(p);
   return p;
 }
 PLANET_DEFS.forEach(buildPlanet);
+
+// Full detail for the planet the hero is on, any planet he is close to, and both ends of a launch.
+function updatePlanetDetail() {
+  for (const p of planets) {
+    const near = p === active || P.pos.distanceTo(p.center) - p.radius < p.radius * 1.5 ||
+      (state === S.TRANSITION && transition && planets[transition.next] === p);
+    if (p.detail.visible !== near) p.detail.visible = near;
+  }
+}
+
+// Automatic resolution (docs/performance-rules.md): if frames run slow for two seconds the render
+// resolution steps down, and steps back up after a stretch of fast frames. Off with ?q= and in tests.
+const AutoRes = (() => {
+  const base = Math.min(window.devicePixelRatio, QUALITY.pixelRatioCap);
+  const min = Math.max(0.5, base * QUALITY.minPixelRatio);
+  let pr = base, avg = 1 / 60, timer = 0;
+  return {
+    update(rawDt) {
+      if (!QUALITY.adaptive || rawDt <= 0 || rawDt > 0.25 || document.hidden) return;
+      avg += (rawDt - avg) * 0.05;
+      timer += rawDt;
+      if (avg > 1 / 45 && timer > 2 && pr > min) { pr = Math.max(min, pr - 0.25); renderer.setPixelRatio(pr); timer = 0; }
+      else if (avg < 1 / 70 && timer > 6 && pr < base) { pr = Math.min(base, pr + 0.25); renderer.setPixelRatio(pr); timer = 0; }
+      else if (timer > 6) timer = 0;
+    },
+    get pixelRatio() { return pr; }
+  };
+})();
 { // the sun turns over the middle of the route (s = 70)
   const mid = WindGardens.debug.dirAt(70, 0), ahead = WindGardens.debug.dirAt(71, 0);
   DayCycle.configure(mid, ahead.sub(mid));
@@ -772,6 +817,7 @@ player.userData.restRot = {};
       model.scale.setScalar(scale);
       model.position.y = -footY * scale;
 
+      model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
       playerRig.add(model);
 
       const bones = {};
@@ -2086,7 +2132,9 @@ function updateMenuCamera(dt) {
 
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const rawDt = clock.getDelta();
+  const dt = Math.min(rawDt, 0.05);
+  AutoRes.update(rawDt);
   const t = clock.elapsedTime;
 
   // ambient spin for shards, gates, spinners
@@ -2118,10 +2166,43 @@ function animate() {
   Particles.update(dt);
   Audio.update();
   starfield.position.copy(camera.position);
-  DayCycle.apply(camera);
+  updatePlanetDetail();
+  DayCycle.apply(camera, P.pos, active && active.center);
+  updateHeroShadow();
   heroNightGlow();
   TunePanel.update();
   renderer.render(scene, camera);
+}
+
+// A soft round shadow straight under the hero (issue #5), so the landing spot reads during a
+// jump whatever the sun is doing. It lies on the first surface below him and fades with height.
+const heroShadow = (() => {
+  const cv = document.createElement("canvas"); cv.width = cv.height = 64;
+  const cx = cv.getContext("2d"), gr = cx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, "rgba(0,0,0,0.55)"); gr.addColorStop(0.6, "rgba(0,0,0,0.3)"); gr.addColorStop(1, "rgba(0,0,0,0)");
+  cx.fillStyle = gr; cx.fillRect(0, 0, 64, 64);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({
+    map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false, fog: false,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  m.renderOrder = 1; m.visible = false;
+  scene.add(m);
+  return m;
+})();
+const _hsUp = new THREE.Vector3(), _hsQ = new THREE.Quaternion(), _hsZ = new THREE.Vector3(0, 0, 1);
+function updateHeroShadow() {
+  const show = state === S.PLAYING && active && active.def.theme === "wind" && player.visible && !P.climbing;
+  heroShadow.visible = !!show;
+  if (!show) return;
+  _hsUp.copy(P.pos).sub(active.center);
+  const f = WindGardens.cameraFloor(P.pos);
+  const above = f.h - f.floor;
+  if (!isFinite(f.floor) || above > 14) { heroShadow.visible = false; return; }
+  _hsUp.normalize();
+  heroShadow.position.copy(active.center).addScaledVector(_hsUp, active.radius + f.floor + 0.04);
+  heroShadow.quaternion.copy(_hsQ.setFromUnitVectors(_hsZ, _hsUp));
+  const k = Math.max(0, 1 - above / 14);
+  heroShadow.scale.setScalar(0.75 + 0.35 * k);
+  heroShadow.material.opacity = 0.35 + 0.65 * k;
 }
 
 // At night Mario's own textures glow faintly (emissive = his texture), so he stays readable
@@ -2167,7 +2248,7 @@ landOnPlanet(0);
 state = S.MENU;
 // test/QA access (see docs/wind-gardens.md)
 let dbgPause = false;
-window.__dbg = { P, camera, camDir, WindGardens, set pause(v) { dbgPause = v; },
+window.__dbg = { P, camera, camDir, WindGardens, QUALITY, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },
   get ready() { return !!player.userData.ready; },
   // place the hero at route coordinates (s, l, height above the base sphere), facing +s
   place(s, l, h, back) {
