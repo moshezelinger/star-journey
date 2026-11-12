@@ -548,7 +548,7 @@ function buildPlanet(def, index) {
     if (FX.shadows) group.traverse(o => {
       if (!o.isMesh) return;
       const m = Array.isArray(o.material) ? o.material[0] : o.material;
-      o.receiveShadow = true;
+      o.receiveShadow = !o.userData.noReceive;
       o.castShadow = o !== body && !(m && m.transparent) && !o.userData.noCast;
     });
   }

@@ -26,3 +26,7 @@ What this does and does not show: the differences are within ±1 ms and go both 
 ## Path, sky and shadows (second pass)
 
 `perf-check.js` measures CPU time per frame in software rendering, so the shadow map does not show up there (all rows within ±1 ms again). The shadow map adds one extra pass over the casting objects near the hero each frame; on a real GPU this is the effect most likely to cost frame rate on a phone. It drops to a 1024 map on touch screens and can be switched off with `?fx=-shadows`. **Not measured on a real device.**
+
+## Net, landing and abyss (greyscale check)
+
+`net-and-gap.jpg`: top left the safety net in the training trench (morning), top right the same in greyscale, bottom left the bridge gap in greyscale, bottom right the net at night. Grass is the lightest surface, the trench floor is a darker band with a light rope grid on it, and the canyon falls off into a dark haze, so the three read apart without colour. 1280×720 desktop window, headless SwiftShader.

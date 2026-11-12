@@ -136,6 +136,10 @@ const WindGardens = (() => {
   // sphere is pushed under it in hide0..hide1, |l| < hideL, with a margin larger than one coarse
   // triangle so no gap shows at the seam.
   const CANYON_STRIP = { s0: 68, s1: 130, maxL: 165, hide0: 72.5, hide1: 125.5, hideL: 155, ds: 0.5, rows: 131 };
+  // The training trench gets the same treatment (the net was hidden under the coarse triangles).
+  // It ends where the canyon strip starts, so the two never overlap.
+  const TRENCH_STRIP = { s0: 51.5, s1: 68, maxL: 165, hide0: 56, hide1: 67, hideL: 155, ds: 0.5, rows: 131, trench: true };
+  const inStrip = (cs, c) => c.s > cs.hide0 && c.s < cs.hide1 && Math.abs(c.l) < cs.hideL;
 
   // ---- terrain mesh shaping + painting ----
   function shapeGround(geo) {
@@ -144,13 +148,13 @@ const WindGardens = (() => {
       v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
       const c = coordsOf(v);
       // inside the detailed canyon strip the coarse sphere sinks out of sight (see buildCanyon)
-      const hidden = FX.canyon && c.s > CANYON_STRIP.hide0 && c.s < CANYON_STRIP.hide1 && Math.abs(c.l) < CANYON_STRIP.hideL;
+      const hidden = (FX.canyon && inStrip(CANYON_STRIP, c)) || (FX.path && inStrip(TRENCH_STRIP, c));
       v.multiplyScalar(R + (hidden ? -45 : terrainH(c.s, c.l)));
       pos.setXYZ(i, v.x, v.y, v.z);
     }
     pos.needsUpdate = true;
     const col = geo.attributes.color, tmp = new THREE.Color(), cen = new V3(), rr = (() => { let sd = 5; return () => (sd = (sd * 16807) % 2147483647) / 2147483647; })();
-    const dirt = new THREE.Color(0xeac67e), rock = new THREE.Color(0x76655a), deep = new THREE.Color(0x3b3550), net = new THREE.Color(0xb78b52), plaza = new THREE.Color(0x92d874);
+    const dirt = new THREE.Color(0xeac67e), rock = new THREE.Color(0x76655a), deep = new THREE.Color(0x3b3550), net = new THREE.Color(FX.path ? 0x6e5236 : 0xb78b52), plaza = new THREE.Color(0x92d874);
     for (let i = 0; i < pos.count; i += 3) {
       cen.set(0, 0, 0);
       for (let k = 0; k < 3; k++) cen.x += pos.getX(i + k), cen.y += pos.getY(i + k), cen.z += pos.getZ(i + k);
@@ -354,8 +358,10 @@ const WindGardens = (() => {
   }
 
   // ---------- canyon strip: fine mesh, strata colours, darker and bluer with depth ----------
-  function buildCanyon() {
-    const cs = CANYON_STRIP, cols = Math.round((cs.s1 - cs.s0) / cs.ds) + 1, rows = cs.rows;
+  function buildCanyon(cs) {
+    cs = cs || CANYON_STRIP;
+    const plaza = new THREE.Color(0x92d874), netFloor = new THREE.Color(0x6e5236);
+    const cols = Math.round((cs.s1 - cs.s0) / cs.ds) + 1, rows = cs.rows;
     const pos = new Float32Array(cols * rows * 3), colA = new Float32Array(cols * rows * 3);
     const strata = [0xe0b07a, 0xc8845a, 0xe8c896, 0xb06a4e, 0xd6a072, 0x9a6050, 0xcc9468].map(h => new THREE.Color(h));
     const haze = new THREE.Color(0x4a4778), dirt = new THREE.Color(0xeac67e), c = new THREE.Color(), v = new V3();
@@ -369,7 +375,12 @@ const WindGardens = (() => {
         localPos(s, l, h).toArray(pos, n * 3);
         const depth = -h;
         if (depth < 0.25) {
-          if (!FX.path && Math.abs(l) < 3.2) c.copy(dirt); else H.tint(dirAt(s, l, v), c);
+          if (!FX.path && Math.abs(l) < 3.2) c.copy(dirt);
+          else if (Math.abs(l) < 11 && s > 20 && s < 56) c.copy(plaza);
+          else H.tint(dirAt(s, l, v), c);
+        } else if (cs.trench) {
+          H.tint(dirAt(s, l, v), c).lerp(netFloor, Math.min(1, depth / 1.2));
+          c.multiplyScalar(0.92 + 0.08 * Math.sin(l * 0.9 + s * 1.7));
         } else {
           const wob = depth + 0.7 * Math.sin(l * 0.11 + s * 0.35) + 0.4 * Math.sin(l * 0.37);
           const band = Math.floor(wob / 2.3);
@@ -398,6 +409,8 @@ const WindGardens = (() => {
     }
     const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0,
       polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    m.userData.noCast = true;     // its self-shadow ended in the straight edge of the shadow map
+    m.userData.noReceive = true;  // and rim plants threw speckles down the steep walls
     group.add(m);
   }
 
@@ -406,6 +419,7 @@ const WindGardens = (() => {
   // jagged yellow polygon. The ribbon follows terrainH at 0.5 unit steps, wobbles a little at
   // its edges and fades into the grass through vertex alpha. It is skipped wherever the ground
   // dips (trench, canyon), where the net and the bridge take over.
+  let pathMat = null;
   function buildPath() {
     const S0 = -16, S1 = 162, DS = 0.5;
     const across = [-1, -0.88, -0.74, -0.3, 0, 0.3, 0.74, 0.88, 1];   // fraction of the half width
@@ -448,10 +462,52 @@ const WindGardens = (() => {
       for (let k = 0; k < idx.length; k += 3) { const t = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = t; }
       geo.setIndex(idx); geo.computeVertexNormals();
     }
-    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, depthWrite: false,
-      roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    pathMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, depthWrite: false,
+      roughness: 1, metalness: 0, emissive: 0xe6c27c, emissiveIntensity: 0,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const m = new THREE.Mesh(geo, pathMat);
     m.renderOrder = -1;           // before the other see-through things (flags' halos, beams)
     m.receiveShadow = true;
+    group.add(m);
+  }
+
+  // ---------- the safety net over the training trench (issue #5) ----------
+  // A light rope grid on a darker floor, so the net reads by its pattern, not only its colour
+  // (also in greyscale). Same span as the old line grid; it sits 0.08 above the trench floor.
+  function buildNet() {
+    const t = LAYOUT.trench, cv = document.createElement("canvas");
+    cv.width = cv.height = 64;
+    const cx = cv.getContext("2d");
+    cx.strokeStyle = "#fff1cf"; cx.lineWidth = 7;
+    cx.beginPath(); cx.moveTo(0, 2); cx.lineTo(64, 2); cx.moveTo(2, 0); cx.lineTo(2, 64); cx.stroke();
+    cx.fillStyle = "#f4d79a"; cx.beginPath(); cx.arc(2, 2, 6, 0, 7); cx.fill();
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.anisotropy = 4;
+    const DS = 0.5, DL = 2, CELL = 1.2, pos = [], uv = [], idx = [];
+    let cols = 0, rows = 0;
+    // only the lower part of the trench: on the walls the grid read as a fence from the meadow
+    let s0 = t.a, s1 = t.b;
+    while (terrainH(s0, 0) > -1.3 && s0 < t.b) s0 += 0.1;
+    while (terrainH(s1, 0) > -1.3 && s1 > t.a) s1 -= 0.1;
+    for (let s = s0; s <= s1 + 1e-6; s += (s1 - s0) / Math.ceil((s1 - s0) / DS), rows++) {
+      cols = 0;
+      for (let l = -100; l <= 100 + 1e-6; l += DL, cols++) {
+        localPos(s, l, terrainH(s, l) + 0.08).toArray(pos, pos.length);
+        uv.push(l / CELL, (s - t.a) / CELL);
+      }
+    }
+    for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
+      const a = j * cols + i, b = a + 1, d = a + cols, e = d + 1;
+      idx.push(a, d, b, b, d, e);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.35,
+      side: THREE.DoubleSide, roughness: 0.9, emissive: 0x6a5530, emissiveIntensity: 0.25 }));
+    m.userData.noCast = true;
     group.add(m);
   }
 
@@ -587,7 +643,8 @@ const WindGardens = (() => {
     group.add(put(pedMesh, (ped.s0 + ped.s1) / 2, 0, 0));
     colliders.push(pedMesh);
 
-    {
+    if (FX.path) { buildCanyon(TRENCH_STRIP); buildNet(); }
+    else {
       const pts = [], t = LAYOUT.trench;
       for (let l = -100; l <= 100; l += 3) for (let s = t.a; s < t.b; s += 1) {
         pts.push(localPos(s, l, terrainH(s, l) + 0.07), localPos(s + 1, l, terrainH(s + 1, l) + 0.07));
@@ -1132,6 +1189,7 @@ const WindGardens = (() => {
     const night = (GameShared.sky && GameShared.sky.night) || 0;
     if (markerMat) { markerMat.emissiveIntensity = 0.4 + 1.6 * night; markerHalo.opacity = 0.04 + 0.4 * night; }
     if (windowMat) windowMat.emissiveIntensity = 0.1 + 1.3 * night;
+    if (pathMat) pathMat.emissiveIntensity = 0.16 * night;      // the route stays a lighter band in the dark
     if (koopa && koopa.ring) koopa.ring.material.opacity = Math.min(1, koopa.shadow.material.opacity * (0.25 + 1.8 * night));
   }
 
