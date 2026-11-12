@@ -471,6 +471,42 @@ const WindGardens = (() => {
     group.add(m);
   }
 
+  // ---------- grass clumps that sway with the shared wind (issue #5) ----------
+  // Five thin blades, darker at the root; normals point up so the clump shades like soft grass.
+  function grassClump() {
+    const pos = [], col = [], nrm = [], root = new THREE.Color(0x3f9a4a), tip = new THREE.Color(0xa6e47e);
+    for (let i = 0; i < 5; i++) {
+      const a = i / 5 * Math.PI * 2 + 0.3 * Math.sin(i * 7.1), w = 0.05, hgt = 0.38 + 0.18 * ((i * 37) % 5) / 4;
+      const ca = Math.cos(a), sa = Math.sin(a), lean = 0.14;
+      const A = [-sa * w + ca * 0.03, 0, ca * w + sa * 0.03], B = [sa * w + ca * 0.03, 0, -ca * w + sa * 0.03], T = [ca * lean, hgt, sa * lean];
+      // both windings with the same upward normal: a double-sided material would flip the
+      // normal on the back face and turn half the blades black
+      pos.push(...A, ...B, ...T, ...B, ...A, ...T);
+      for (let k = 0; k < 2; k++) col.push(root.r, root.g, root.b, root.r, root.g, root.b, tip.r, tip.g, tip.b);
+      for (let k = 0; k < 6; k++) nrm.push(0, 1, 0);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+    return g;
+  }
+  const grassU = { uTime: { value: 0 }, uWind: { value: 1 } };
+  let grassM = null;
+  function grassMat() {
+    if (grassM) return grassM;
+    grassM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+    grassM.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = grassU.uTime; sh.uniforms.uWind = grassU.uWind;
+      sh.vertexShader = "uniform float uTime; uniform float uWind;\n" + sh.vertexShader.replace("#include <begin_vertex>",
+        "#include <begin_vertex>\n" +
+        "#ifdef USE_INSTANCING\n float ph = dot(instanceMatrix[3].xyz, vec3(0.31, 0.17, 0.23));\n#else\n float ph = 0.0;\n#endif\n" +
+        " float sw = position.y * position.y * (0.25 + 0.35 * uWind);\n" +
+        " transformed.x += sw * sin(uTime * 2.3 + ph);\n transformed.z += sw * 0.6 * sin(uTime * 1.7 + ph * 1.3);");
+    };
+    return grassM;
+  }
+
   // ---------- the safety net over the training trench (issue #5) ----------
   // A light rope grid on a darker floor, so the net reads by its pattern, not only its colour
   // (also in greyscale). Same span as the old line grid; it sits 0.08 above the trench floor.
@@ -594,7 +630,8 @@ const WindGardens = (() => {
       flower: [
         { geo: new THREE.CylinderGeometry(0.04, 0.04, 0.34, 4), mat: H.mat(0x4cae52), y: 0.17 },
         { geo: new THREE.IcosahedronGeometry(0.16, 0), mat: H.mat(0xfff0a8, { emissive: 0xffc040, emissiveIntensity: 0.25 }), y: 0.4 }],
-      tuft: [{ geo: new THREE.ConeGeometry(0.16, 0.5, 4), mat: H.mat(0x62cf6b), y: 0.25 }],
+      tuft: FX.path ? [{ geo: grassClump(), mat: grassMat(), y: 0, noCast: true }]
+                    : [{ geo: new THREE.ConeGeometry(0.16, 0.5, 4), mat: H.mat(0x62cf6b), y: 0.25 }],
       rock: [{ geo: new THREE.DodecahedronGeometry(0.45, 0), mat: H.mat(0xa6a39a), y: 0 }]
     };
     const ok = (s, l) => {
@@ -606,15 +643,16 @@ const WindGardens = (() => {
       if (Math.abs(l) < 14 && s > 118 && s < 160) return false;
       return true;
     };
-    function scatterNear(def, count, sMin, sMax, h, sc0, sc1) {
-      const meshes = def.map(pt => { const m = new THREE.InstancedMesh(pt.geo, pt.mat, count); group.add(m); return m; });
+    function scatterNear(def, count, sMin, sMax, h, sc0, sc1, test, lMax) {
+      test = test || ok; lMax = lMax || 90;
+      const meshes = def.map(pt => { const m = new THREE.InstancedMesh(pt.geo, pt.mat, count); m.userData.noCast = !!pt.noCast; group.add(m); return m; });
       const loc = def.map(pt => new THREE.Matrix4().makeTranslation(0, pt.y || 0, 0));
       const base = new THREE.Matrix4(), out = new THREE.Matrix4(), q = new THREE.Quaternion(), spin = new THREE.Quaternion();
       const sc = new V3(), up = new V3(0, 1, 0);
       let n = 0, guard = 0;
       while (n < count && guard++ < count * 20) {
-        const s = sMin + rand() * (sMax - sMin), l = (rand() * 2 - 1) * 90;
-        if (!ok(s, l)) continue;
+        const s = sMin + rand() * (sMax - sMin), l = (rand() * 2 - 1) * lMax;
+        if (!test(s, l)) continue;
         const dir = dirAt(s, l);
         const k = sc0 + Math.pow(rand(), 2.2) * (sc1 - sc0);
         q.setFromUnitVectors(up, dir); spin.setFromAxisAngle(up, rand() * 6.28); q.multiply(spin);
@@ -628,6 +666,20 @@ const WindGardens = (() => {
     scatterNear(parts.tree, 260, -60, 230, 0, 1.3, 4.2);
     scatterNear(parts.flower, 900, -40, 200, 0, 1.0, 1.6);
     scatterNear(parts.tuft, 1400, -40, 200, 0, 1.0, 2.2);
+    if (FX.path) {
+      // low grass along both path edges: foreground depth, clear of the path itself so the
+      // hero's feet and the path edge stay visible
+      const edge = (s, l) => {
+        const a = Math.abs(l);
+        if (a < 3.9 || a > 8.5 || s < -14 || s > 118) return false;
+        const k = LAYOUT.canyon, t = LAYOUT.trench;
+        if (s > k.a - 2 && s < k.b + 2) return false;
+        if (s > t.a - 2 && s < t.b + 2) return false;
+        if (s > 21 && s < 25 && a < 6) return false;              // around the punch crate
+        return true;
+      };
+      scatterNear(parts.tuft, 900, -14, 118, 0, 0.55, 1.05, edge, 9);
+    }
     scatterNear(parts.rock, 160, -40, 200, 0.1, 0.8, 4.5);
 
     // ---------- training: punch crate, pedestal, net ----------
@@ -1200,6 +1252,7 @@ const WindGardens = (() => {
     updateFlags(ctx.t);
     updateSails(ctx.t);
     updateNight();
+    grassU.uTime.value = ctx.t; grassU.uWind.value = Math.min(1.6, wind.strength);
     updateLantern(ctx.t);
     if (!S.locked) { updateGoomba(dt, P, ctx); updateKoopa(dt, P, ctx); }
     updateMill(dt, P, ctx);
