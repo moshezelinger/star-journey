@@ -186,8 +186,22 @@ const WindGardens = (() => {
   let flags = [], blades = [], ladderGlow = [], lever = null, luigi = null, cart = null, beam = null, lanternGlow = null;
   let crateMesh = null, goomba = null, koopa = null, punchHint = null;
 
-  function box(w, h, d, color, opts) { return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), H.mat(color, opts)); }
-  function cyl(rt, rb, h, seg, color, opts) { return new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg || 10), H.mat(color, opts)); }
+  // Shared kit (issue #5): identical parts share one geometry, and parts of one plain colour share
+  // one material. A material passed in, or one with options (glow, emissive), stays its own,
+  // because some of those are changed at run time (ladder rungs, the lever knob).
+  const kitGeo = new Map(), kitMat = new Map();
+  function kitGeometry(key, make) { let g = kitGeo.get(key); if (!g) { g = make(); kitGeo.set(key, g); } return g; }
+  function kitMaterial(color, opts) {
+    if (opts || typeof color !== "number") return color && color.isMaterial ? color : H.mat(color, opts);
+    let m = kitMat.get(color); if (!m) { m = H.mat(color); kitMat.set(color, m); } return m;
+  }
+  function box(w, h, d, color, opts) {
+    return new THREE.Mesh(kitGeometry("b" + w + "," + h + "," + d, () => new THREE.BoxGeometry(w, h, d)), kitMaterial(color, opts));
+  }
+  function cyl(rt, rb, h, seg, color, opts) {
+    seg = seg || 10;
+    return new THREE.Mesh(kitGeometry("c" + rt + "," + rb + "," + h + "," + seg, () => new THREE.CylinderGeometry(rt, rb, h, seg)), kitMaterial(color, opts));
+  }
   function add(parent, obj, x, y, z) { obj.position.set(x || 0, y || 0, z || 0); parent.add(obj); return obj; }
 
   function makeFlag(s, l, h, height) {
