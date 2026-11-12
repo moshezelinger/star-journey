@@ -202,6 +202,16 @@ const WindGardens = (() => {
     seg = seg || 10;
     return new THREE.Mesh(kitGeometry("c" + rt + "," + rb + "," + h + "," + seg, () => new THREE.CylinderGeometry(rt, rb, h, seg)), kitMaterial(color, opts));
   }
+  // a box from a to b (in the parent's frame), w thick
+  const _bz = new V3(0, 0, 1);
+  function strut(parent, a, b, w, color) {
+    const d = new V3().subVectors(b, a), len = d.length();
+    const m = box(w, w, +len.toFixed(2), color);
+    m.position.copy(a).add(b).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(_bz, d.normalize());
+    parent.add(m);
+    return m;
+  }
   function add(parent, obj, x, y, z) { obj.position.set(x || 0, y || 0, z || 0); parent.add(obj); return obj; }
 
   function makeFlag(s, l, h, height) {
@@ -785,32 +795,83 @@ const WindGardens = (() => {
 
     // ---------- windmill ----------
     const towerG = new THREE.Group();
-    const tower = cyl(mill.towerR - 1.4, mill.towerR, mill.towerH, 14, 0xf0e2c0);
-    tower.position.y = mill.towerH / 2; towerG.add(tower);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(mill.towerR + 0.8, 7, 14), H.mat(0xb94c3a));
-    roof.position.y = mill.towerH + 3.2; towerG.add(roof);
-    for (let k = 0; k < 4; k++) add(towerG, box(0.4, mill.towerH, 0.5, 0x8a5a3b), Math.cos(k * 1.57) * (mill.towerR - 0.9), mill.towerH / 2, Math.sin(k * 1.57) * (mill.towerR - 0.9));
+    let tower, roof;
+    const TR = mill.towerR, TH = mill.towerH, rAt = (y) => TR - 1.4 * (y / TH);
     if (FX.windmill) {
-      // stone foot, a door and windows facing the route; the windows glow at night
-      add(towerG, cyl(mill.towerR + 0.5, mill.towerR + 0.9, 2.6, 14, 0x9a948a), 0, 1.3, 0);
-      const rAt = (y) => mill.towerR - 1.4 * (y / mill.towerH);
-      add(towerG, box(2.2, 3.6, 0.5, 0x5a3a22), 0, 2.6 + 1.8, rAt(4.4) + 0.05);
-      windowMat = new THREE.MeshStandardMaterial({ color: 0x3a3040, emissive: 0xffc060, emissiveIntensity: 0.1, roughness: 0.6 });
-      for (const [y, x] of [[10, -1.6], [15.5, 1.4], [21, -0.6]]) {
-        const win = add(towerG, new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.5, 0.4), windowMat), x, y, rAt(y) - 0.05);
-        win.rotation.y = Math.atan2(x, rAt(y));
+      // An eight-sided tower (issue #5): a flat face toward the route, timber battens on the
+      // corners, two timber bands, a stone foot with steps up to the door, framed windows, and an
+      // eight-sided cap on a timber curb with a finial. The corners sit 4% outside the collision
+      // cylinder, so the flat faces stay close to where the hero is stopped.
+      const OCT = 1.04, ROT = Math.PI / 8, COS8 = Math.cos(Math.PI / 8);
+      const apo = (y) => rAt(y) * OCT * COS8;                          // distance to a flat face
+      const wood = 0x8a5a3b, wall = 0xf0e2c0, stone = 0x9a948a;
+      tower = cyl((TR - 1.4) * OCT, TR * OCT, TH, 8, wall);
+      tower.position.y = TH / 2; tower.rotation.y = ROT; towerG.add(tower);
+      add(towerG, cyl(TR * OCT + 0.6, TR * OCT + 0.95, 2.6, 8, stone), 0, 1.3, 0).rotation.y = ROT;
+      for (let k = 0; k < 8; k++) {                                    // corner battens, following the taper
+        const a = ROT + k * Math.PI / 4, sa = Math.sin(a), ca = Math.cos(a);
+        const r0 = TR * OCT + 0.08, r1 = rAt(TH) * OCT + 0.08;
+        strut(towerG, new V3(sa * r0, 2.6, ca * r0), new V3(sa * r1, TH, ca * r1), 0.38, wood);
       }
-      add(towerG, new THREE.Mesh(new THREE.TorusGeometry(mill.towerR - 1.35, 0.25, 6, 20), H.mat(0x8a5a3b)), 0, mill.towerH - 0.2, 0).rotation.x = Math.PI / 2;
+      for (const y of [9.5, 18]) {                                    // timber bands
+        const ring = new THREE.Mesh(new THREE.CylinderGeometry(rAt(y + 0.25) * OCT + 0.1, rAt(y - 0.25) * OCT + 0.1, 0.5, 8, 1, true), kitMaterial(wood));
+        ring.position.y = y; ring.rotation.y = ROT; towerG.add(ring);
+      }
+      // door, frame and steps on the route side
+      const zd = apo(4.4);
+      add(towerG, box(2.7, 4.1, 0.3, wood), 0, 2.6 + 2.05, zd - 0.02);
+      add(towerG, box(2.1, 3.5, 0.4, 0x5a3a22), 0, 2.6 + 1.75, zd + 0.05);
+      add(towerG, box(3.1, 0.35, 0.6, wood), 0, 2.6 + 4.15, zd + 0.15);
+      const foot = TR * OCT + 0.95;
+      [[2.0, 0.55], [1.3, 1.15], [0.65, 1.75]].forEach(([hgt, out]) => add(towerG, box(2.8, hgt, 0.6, stone), 0, hgt / 2, foot + out - 0.3));
+      // framed windows with sills; they glow at night
+      windowMat = new THREE.MeshStandardMaterial({ color: 0x3a3040, emissive: 0xffc060, emissiveIntensity: 0.1, roughness: 0.6 });
+      const lean = Math.atan(1.4 * OCT * COS8 / TH);
+      for (const [y, x] of [[10.8, -1.4], [15.5, 1.3], [21, -0.6]]) {
+        const z = apo(y);
+        const fr = add(towerG, box(1.55, 1.95, 0.22, wood), x, y, z); fr.rotation.x = lean;
+        const win = add(towerG, new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.5, 0.3), windowMat), x, y, z + 0.06); win.rotation.x = lean;
+        add(towerG, box(1.8, 0.18, 0.45, wood), x, y - 1.0, z + 0.2);
+      }
+      // cap: a timber curb, an eight-sided roof with a deep overhang, and a finial
+      const curbR = rAt(TH) * OCT + 0.35;
+      add(towerG, cyl(curbR, curbR, 0.9, 8, wood), 0, TH + 0.45, 0).rotation.y = ROT;
+      roof = new THREE.Mesh(new THREE.ConeGeometry(TR + 1.2, 6.8, 8), H.mat(0xb94c3a));
+      roof.position.y = TH + 0.9 + 3.4; roof.rotation.y = ROT; towerG.add(roof);
+      add(towerG, cyl(0.12, 0.12, 2.2, 6, 0x5a3a22), 0, TH + 0.9 + 6.8 + 0.9, 0);
+      add(towerG, new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), H.mat(0xf2c24a, { emissive: 0x8a5a10, emissiveIntensity: 0.3, roughness: 0.4 })), 0, TH + 0.9 + 6.8 + 2.1, 0);
+    } else {
+      tower = cyl(TR - 1.4, TR, TH, 14, 0xf0e2c0);
+      tower.position.y = TH / 2; towerG.add(tower);
+      roof = new THREE.Mesh(new THREE.ConeGeometry(TR + 0.8, 7, 14), H.mat(0xb94c3a));
+      roof.position.y = TH + 3.2; towerG.add(roof);
+      for (let k = 0; k < 4; k++) add(towerG, box(0.4, TH, 0.5, 0x8a5a3b), Math.cos(k * 1.57) * (TR - 0.9), TH / 2, Math.sin(k * 1.57) * (TR - 0.9));
     }
     group.add(put(towerG, mill.towerS, 0, 0));
     colliders.push(tower, roof);
 
     // axle from the blade hub back to the tower, hub on the plane s = hubS
-    const axle = box(0.7, 0.7, mill.towerS - mill.towerR - mill.hubS + 0.6, 0x6b4b34);
-    group.add(put(axle, (mill.hubS + mill.towerS - mill.towerR) / 2, 0, mill.hubH));
+    const faceS = mill.towerS - rAt(mill.hubH) * (FX.windmill ? 1.04 * Math.cos(Math.PI / 8) : 1);
+    const axle = box(0.7, 0.7, faceS - mill.hubS + 0.4, 0x6b4b34);
+    group.add(put(axle, (mill.hubS + faceS + 0.4) / 2, 0, mill.hubH));
+    if (FX.windmill) {
+      // a timber housing where the shaft leaves the tower, with a small pitched roof
+      const hl = 2.4, hs = faceS - hl / 2 + 0.3;
+      const hous = new THREE.Group();
+      add(hous, box(2.4, 2.4, hl, 0x7a5233), 0, 0, 0);
+      add(hous, box(2.7, 0.25, hl + 0.3, 0x5a3a22), 0, -1.2, 0);
+      for (const sx of [-1, 1]) add(hous, box(1.75, 0.18, hl + 0.4, 0xb94c3a), sx * 0.62, 1.55, 0).rotation.z = -sx * 0.62;
+      group.add(put(hous, hs, 0, mill.hubH));
+    }
     const bladeRoot = new THREE.Group();
     group.add(put(bladeRoot, mill.hubS, 0, mill.hubH));
     add(bladeRoot, new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 10), H.mat(0x6b4b34)), 0, 0, 0);
+    if (FX.windmill) {
+      // hub cap and bolts, turning with the blades
+      add(bladeRoot, cyl(1.45, 1.45, 0.7, 8, 0x5a3a22), 0, 0, 0.45).rotation.x = Math.PI / 2;
+      add(bladeRoot, cyl(0.55, 0.75, 0.6, 8, 0xc8a24a), 0, 0, 0.95).rotation.x = Math.PI / 2;
+      for (let k = 0; k < 4; k++) add(bladeRoot, new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 5), kitMaterial(0x3a3a40)), Math.cos(k * 1.571 + 0.785) * 1.05, Math.sin(k * 1.571 + 0.785) * 1.05, 0.85);
+    }
     for (let i = 0; i < 4; i++) {
       const g = makeBlade(i, i === 0);
       bladeRoot.add(g);
@@ -820,12 +881,48 @@ const WindGardens = (() => {
     // balcony
     const balG = new THREE.Group();
     const bw = bal.l1 - bal.l0, bd = bal.s1 - bal.s0;
-    add(balG, box(bw, 0.5, bd, 0xc8935a), 0, -0.25, 0);
-    for (const sx of [-1, 1]) add(balG, box(0.14, 1.2, bd, 0xf1e3b8), sx * (bw / 2 - 0.07), 0.6, 0);
-    add(balG, box(bw, 1.2, 0.14, 0xf1e3b8), 0, 0.6, -(bd / 2 - 0.07));
-    for (const sx of [-1, 1]) add(balG, box(0.3, bal.top - 0.5, 0.3, 0x7a5233), sx * (bw / 2 - 0.3), -(bal.top - 0.5) / 2 - 0.25, 0);
+    if (FX.windmill) {
+      // Plank deck on joists, an open rail on the tower side and the outer side (so the brother
+      // stays in view), no rail on the entry side (toward the hub) or the blade side. Below, a
+      // timber trestle with cross braces down to the ground. The floor top stays at bal.top.
+      add(balG, box(bw + 0.2, 0.25, bd + 0.2, 0x5a3a22), 0, -0.33, 0);
+      const plankC = [0xc8935a, 0xb8854d, 0xd4a068];
+      for (let x = -bw / 2 + 0.25, i = 0; x < bw / 2; x += 0.5, i++) add(balG, box(0.46, 0.2, bd, plankC[(i * 7) % 3]), x, -0.1, 0);
+      const railC = 0xf1e3b8, postC = 0x7a5233, x0 = -bw / 2 + 0.1, x1 = bw / 2 - 0.1, z0 = -bd / 2 + 0.1, z1 = bd / 2 - 0.1;
+      const posts = [];
+      for (let x = x0; x <= x1 + 0.01; x += (x1 - x0) / 4) posts.push([x, z0]);          // tower side
+      for (let z = z0 + (z1 - z0) / 2; z <= z1 + 0.01; z += (z1 - z0) / 2) posts.push([x1, z]); // outer side
+      posts.push([x0, z1]);                                                                   // entry corner
+      for (const [x, z] of posts) add(balG, box(0.16, 1.15, 0.16, postC), x, 0.575, z);
+      for (const y of [1.15, 0.6]) {
+        strut(balG, new V3(x0, y, z0), new V3(x1, y, z0), y > 1 ? 0.14 : 0.09, railC);
+        strut(balG, new V3(x1, y, z0), new V3(x1, y, z1), y > 1 ? 0.14 : 0.09, railC);
+      }
+    } else {
+      add(balG, box(bw, 0.5, bd, 0xc8935a), 0, -0.25, 0);
+      for (const sx of [-1, 1]) add(balG, box(0.14, 1.2, bd, 0xf1e3b8), sx * (bw / 2 - 0.07), 0.6, 0);
+      add(balG, box(bw, 1.2, 0.14, 0xf1e3b8), 0, 0.6, -(bd / 2 - 0.07));
+      for (const sx of [-1, 1]) add(balG, box(0.3, bal.top - 0.5, 0.3, 0x7a5233), sx * (bw / 2 - 0.3), -(bal.top - 0.5) / 2 - 0.25, 0);
+    }
     group.add(put(balG, (bal.s0 + bal.s1) / 2, (bal.l0 + bal.l1) / 2, bal.top));
     colliders.push(balG);
+    if (FX.windmill) {
+      // the trestle is not a camera collider: thin beams should not pull the camera in
+      const tr = new THREE.Group(), wood = 0x7a5233, brace = 0x6b4b34;
+      const xa = -bw / 2 + 0.3, xb = bw / 2 - 0.3, za = -bd / 2 + 0.3, zb = bd / 2 - 0.3, top = -0.45, bot = -bal.top;
+      for (const x of [xa, xb]) for (const z of [za, zb]) strut(tr, new V3(x, top, z), new V3(x, bot, z), 0.34, wood);
+      const levels = [top, (top + bot) / 2, bot + 0.3];
+      for (const y of levels) {
+        strut(tr, new V3(xa, y, za), new V3(xb, y, za), 0.2, brace); strut(tr, new V3(xa, y, zb), new V3(xb, y, zb), 0.2, brace);
+        strut(tr, new V3(xa, y, za), new V3(xa, y, zb), 0.2, brace); strut(tr, new V3(xb, y, za), new V3(xb, y, zb), 0.2, brace);
+      }
+      for (let k = 0; k < levels.length - 1; k++) {
+        const y0 = levels[k], y1 = levels[k + 1], f = k % 2 ? 1 : -1;
+        for (const z of [za, zb]) strut(tr, new V3(f * xa, y0, z), new V3(-f * xa, y1, z), 0.13, brace);
+        for (const x of [xa, xb]) strut(tr, new V3(x, y0, f * za), new V3(x, y1, -f * za), 0.13, brace);
+      }
+      group.add(put(tr, (bal.s0 + bal.s1) / 2, (bal.l0 + bal.l1) / 2, bal.top));
+    }
 
     // brake lever
     const lv = new THREE.Group();
