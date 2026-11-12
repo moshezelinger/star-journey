@@ -704,8 +704,40 @@ const WindGardens = (() => {
 
     const pedMesh = new THREE.Group();
     const pw = (ped.s1 - ped.s0), pd = ped.half * 2;
-    add(pedMesh, box(pd, ped.top, pw, 0x8d9a7a), 0, ped.top / 2, 0);
-    add(pedMesh, box(pd + 0.4, 0.3, pw + 0.4, 0xc4d8a0), 0, ped.top, 0);
+    if (FX.path) {
+      // a dry-stone block (issue #5): courses of stones of uneven length around a darker core,
+      // flush with the old faces so the look matches the collision box; a grass cap on top.
+      // All stones are one instanced mesh with per-stone colour, so it costs one draw call.
+      add(pedMesh, box(pd - 0.24, ped.top - 0.1, pw - 0.24, 0x6f6a60), 0, (ped.top - 0.1) / 2, 0);
+      const pal = [0xb2ac9c, 0xa29c8c, 0xbdb7a6, 0x958f81, 0xaaa597].map(h => new THREE.Color(h));
+      const rows = 3, ch = (ped.top - 0.12) / rows, depth = 0.3, stones = [];
+      const side = (len, place) => {
+        for (let r = 0; r < rows; r++) {
+          let x = -len / 2 + (r % 2 ? 0.5 : 0);
+          if (r % 2) stones.push([place, -len / 2, x, r]);            // a short stone fills the stagger
+          while (x < len / 2 - 0.05) {
+            const w = Math.min(len / 2 - x, 1.1 + rand() * 1.0);
+            stones.push([place, x, x + w, r]); x += w;
+          }
+        }
+      };
+      side(pw, "+l"); side(pw, "-l"); side(pd, "+s"); side(pd, "-s");
+      const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), H.mat(0xffffff), stones.length);
+      const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new V3(), p = new V3();
+      stones.forEach(([place, a, b, r], i) => {
+        const len = b - a - 0.06, mid = (a + b) / 2, y = 0.06 + ch * (r + 0.5), hh = ch - 0.07;
+        if (place === "+l" || place === "-l") { p.set((place === "+l" ? 1 : -1) * (pd / 2 - depth / 2), y, mid); sc.set(depth, hh, len); }
+        else { p.set(mid, y, (place === "+s" ? 1 : -1) * (pw / 2 - depth / 2)); sc.set(len, hh, depth); }
+        mtx.compose(p, q, sc); inst.setMatrixAt(i, mtx);
+        inst.setColorAt(i, pal[Math.floor(rand() * pal.length)].clone().multiplyScalar(0.95 + rand() * 0.1));
+      });
+      pedMesh.add(inst);
+      add(pedMesh, box(pd + 0.3, 0.32, pw + 0.3, 0x7cc463), 0, ped.top - 0.02, 0);
+      add(pedMesh, box(pd + 0.1, 0.14, pw + 0.1, 0x8a6a48), 0, ped.top - 0.22, 0);
+    } else {
+      add(pedMesh, box(pd, ped.top, pw, 0x8d9a7a), 0, ped.top / 2, 0);
+      add(pedMesh, box(pd + 0.4, 0.3, pw + 0.4, 0xc4d8a0), 0, ped.top, 0);
+    }
     group.add(put(pedMesh, (ped.s0 + ped.s1) / 2, 0, 0));
     colliders.push(pedMesh);
 
