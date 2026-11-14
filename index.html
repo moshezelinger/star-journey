@@ -140,6 +140,9 @@
     font-size:18px; color:#cfd8ff; text-align:center; padding:30px;
   }
   #legend { font-size:13px; color:#8e9ac4; line-height:1.8; }
+  #starPick { margin-top:10px; align-items:center; gap:8px; }
+  #starPick .pickLabel { font-size:13px; color:#8e9ac4; }
+  #starPick button { min-width:44px; padding:8px 12px; }
   .medal { font-size:52px; filter:drop-shadow(0 0 20px rgba(255,200,90,.6)); }
   #credits { font-size:11px; color:#6f7aa3; max-width:520px; line-height:1.5; }
   #credits a { color:#8e9ac4; }
@@ -156,6 +159,10 @@
   <button class="pill" id="playBtn">Play</button>
   <div class="row">
     <button class="ghost" id="soundBtn">Sound: On</button>
+  </div>
+  <div class="row" id="starPick">
+    <span class="pickLabel">Jump to star:</span>
+    <button class="ghost" data-star="0">1</button><button class="ghost" data-star="1">2</button><button class="ghost" data-star="2">3</button><button class="ghost" data-star="3">4</button>
   </div>
   <p id="legend">Move with the left stick, jump with the button.<br>On a keyboard: WASD or arrows, Space to jump, drag to look.</p>
   <p id="credits">Bowser model: "<a href="https://sketchfab.com/3d-models/bowser-super-mario-bros1-d02c1fa828364677b890ea8b2d408b97" target="_blank" rel="noopener">Bowser Super Mario Bros.1</a>" by <a href="https://sketchfab.com/Vandacvi" target="_blank" rel="noopener">Vandacvi</a>, CC-BY-4.0.<br>Mario model: "<a href="https://sketchfab.com/3d-models/mario-movie-super-mario-movie-13d05e3c76a148568decf1e8f25888f8" target="_blank" rel="noopener">Mario Movie (Super Mario Movie)</a>" by <a href="https://sketchfab.com/guinavarro.al" target="_blank" rel="noopener">Guilherme Navarro</a>, CC-BY-4.0.<br>Unofficial fan project. Mario, Luigi, Bowser and related characters belong to Nintendo.</p>
@@ -1430,6 +1437,7 @@ window.addEventListener("keydown", e => {
   if (e.code === "Space") { e.preventDefault(); if (!e.repeat) { jumpQueued = true; jumpHeld = true; } }
   if ((e.code === "KeyJ" || e.code === "KeyF" || e.code === "KeyK") && !e.repeat) { punchQueued = true; punchHeld = true; }
   if (e.code === "KeyR" && !e.repeat) resetCamera();
+  if (e.shiftKey && /^Digit[1-4]$/.test(e.code) && !e.repeat && state !== S.MENU) goToStar(+e.code.slice(5) - 1);
 });
 window.addEventListener("keyup", e => {
   keys[e.code] = false;
@@ -1651,6 +1659,27 @@ function startGame() {
     : "WASD: move. Space: jump, and again in the air.\nJ or F: punch. Find Luigi's lantern!", 8000);
 }
 
+// Quick jump to any star (for play-testing): the menu row, the tuning panel, or Shift+1..4 in the game.
+// The state matches the story at that point: the power punch from star 2 on, the hero painted on star 3.
+function goToStar(i) {
+  i = clamp(i | 0, 0, planets.length - 1);
+  if (state !== S.PLAYING && state !== S.TRANSITION) startGame();
+  transition = null;
+  const L = levelOf(planets[i]);
+  if (L) L.reset();
+  P.health = 3; P.invuln = 0; P.charge = 0;
+  P.hasPower = i >= 2;
+  P.painted = i === 2;
+  landOnPlanet(i);
+  state = S.PLAYING;
+  applySky();
+  updateHud();
+  fadeFlash();
+  toast("Star " + (i + 1) + ": " + planets[i].name, 1800);
+}
+window.goToStar = goToStar;
+document.querySelectorAll("#starPick button").forEach(b => b.addEventListener("click", () => { Audio.init(); Audio.click(); goToStar(+b.dataset.star); }));
+
 function goToMenu() {
   state = S.MENU;
   applySky();
@@ -1863,6 +1892,8 @@ function updatePlaying(dt) {
   let groundR = active.radius;
   if (wg) {
     let q = wg.query(P.pos, prevH);
+    // already inside something before this step (a respawn or a moving solid put him there): let him walk out
+    if (q.blocked && wg.query(prevPos, prevH).blocked) q.blocked = false;
     if (q.blocked) {                      // a wall: keep the height gained, undo the sideways step
       const keep = P.pos.distanceTo(active.center);
       P.pos.copy(active.center).addScaledVector(surfaceUp(prevPos, active), keep);

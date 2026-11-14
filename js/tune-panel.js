@@ -59,6 +59,9 @@ const TunePanel = (() => {
     const perf = document.createElement("div");      // live numbers for measuring on a real device
     perf.innerHTML = `<h3>Performance</h3><div id="tunePerf" class="note"></div>`;
     el.appendChild(perf);
+    const stars = document.createElement("div");      // quick jump between the stars for testing (also Shift+1..4)
+    stars.innerHTML = `<h3>Jump to star</h3><div class="bar"><button data-star="0">1 Wind Gardens</button><button data-star="1">2 Basalt Mines</button><button data-star="2">3 Ink Swamp</button><button data-star="3">4 Bowser</button></div><div class="note">Keyboard: Shift+1 to Shift+4.</div>`;
+    el.appendChild(stars);
     const day = document.createElement("div");
     day.innerHTML = `<h3>Time of day</h3><div id="tuneDay" class="note"></div><div class="bar">
       <button data-m="morning">Morning</button><button data-m="noon">Noon</button><button data-m="dusk">Dusk</button><button data-m="night">Night</button></div>`;
@@ -87,6 +90,7 @@ const TunePanel = (() => {
     el.addEventListener("click", e => {
       const b = e.target.closest("button"); if (!b) return;
       if (b.dataset.m && window.DayCycle) DayCycle.setMoment(b.dataset.m);
+      if (b.dataset.star !== undefined && window.goToStar) window.goToStar(+b.dataset.star);
       if (b.dataset.a === "save") { TUNE.save(); if (TUNE.bridge.gap !== gapAtLoad && confirm("The gap width needs a reload. Reload now?")) location.reload(); }
       if (b.dataset.a === "defaults") { TUNE.clear(); for (const g in TUNE_DEFAULTS) Object.assign(TUNE[g], TUNE_DEFAULTS[g]); inputs.forEach(f => f()); }
       if (b.dataset.a === "copy") { const txt = JSON.stringify(TUNE, null, 2); try { navigator.clipboard.writeText(txt); b.textContent = "Copied"; } catch (err) { prompt("Values", txt); } }

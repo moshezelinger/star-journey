@@ -12,7 +12,37 @@ const H = require("./harness");
   const ev = (fn, arg) => page.evaluate(fn, arg);
   const shot = async (name) => { if (!shots) return; await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))); await h.shot("swamp-" + name); };
 
+  // every checkpoint of every star is clear of solids (a respawn must never land inside a trunk)
   let r = await ev(() => {
+    const d = window.__dbg, out = [];
+    for (const [name, L] of [["wind", d.WindGardens], ["mines", d.BasaltMines], ["swamp", d.InkSwamp]]) {
+      const dbg = L.debug;
+      for (const cp of dbg.layout.checkpoints) {
+        const h = (dbg.terrainH ? dbg.terrainH(cp.s, cp.l) : 0) + 0.05;
+        const q = dbg.query(dbg.worldPos(cp.s, cp.l, h), h);
+        if (q.blocked || q.void) out.push(name + ":" + cp.name);
+      }
+    }
+    return out;
+  });
+  c.ok("no checkpoint in any star is inside a solid", r.length === 0, r);
+
+  // a hero who ends up inside a solid can walk out of it
+  r = await ev(() => {
+    const d = window.__dbg, sw = d.InkSwamp.debug, L = sw.layout;
+    d.goTo(2); d.step(5);
+    d.place(L.hutS + 1.2, 0.6, 0.2); d.step(5);
+    d.keys.KeyS = true; d.step(90); d.keys.KeyS = false;
+    const c = sw.coordsOf(d.P.pos);
+    return { s: c.s, out: Math.hypot(c.s - (L.hutS + 1.2), c.l) > 2.6 };
+  });
+  c.ok("walking out of a trunk the hero ended up in", r.out, r);
+
+  // the quick jump between the stars (menu row, tuning panel, Shift+1..4)
+  r = await ev(() => { const out = []; for (const i of [3, 0, 1, 2]) { window.goToStar(i); out.push({ i, planet: window.__dbg.active.name, state: window.__dbg.state, painted: window.__dbg.painted, power: window.__dbg.P.hasPower }); } return out; });
+  c.ok("goToStar lands on each star in the right state", r.every((x, k) => x.state === "PLAYING") && r[0].planet.startsWith("Bowser") && r[2].planet === "Basalt Mines" && r[3].planet === "Ink Swamp" && r[3].painted && r[3].power, r);
+
+  r = await ev(() => {
     const d = window.__dbg; d.goTo(2); d.step(30);
     const sw = d.InkSwamp.debug;
     return { planet: d.active.name, mounted: sw.mounted, heroHidden: !d.P || true };

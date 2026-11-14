@@ -51,7 +51,7 @@ const InkSwamp = (() => {
     edgeL: 40, voidBelow: -2.5, fallRespawn: -4,
     checkpoints: [
       { name: "landing", s: 0, l: 0 }, { name: "roots", s: 12, l: 0 }, { name: "lake", s: 41, l: 0 },
-      { name: "grove", s: 65, l: 0 }, { name: "pond", s: 87, l: 0 }, { name: "coins", s: 103, l: 0 },
+      { name: "grove", s: 65, l: 0 }, { name: "pond", s: 87, l: 0 }, { name: "coins", s: 108, l: 0 },     // clear of the hut trunks (s 103.7, radius 2.6)
       { name: "bed", s: 150, l: 0 }
     ]
   };
