@@ -1,0 +1,20 @@
+{
+  "viewport": [1280, 720],
+  "shots": [
+    { "name": "17-landing-now", "place": [0, 0, 0.3], "cam": [0.38, 9.15], "moment": "morning", "settle": 40 },
+    { "name": "18-landing-dusk", "place": [0, 0, 0.3], "cam": [0.38, 9.15], "moment": "dusk", "settle": 40 },
+    { "name": "19-net", "place": [61.5, 0, 0.3], "cam": [0.75, 9], "moment": "morning", "gray": true },
+    { "name": "20-grass-edge", "place": [30, 0, 0.3], "cam": [0.3, 6.5], "moment": "morning" },
+    { "name": "21-pedestal", "place": [34, 2, 0.3], "cam": [0.35, 8], "moment": "morning" },
+    { "name": "22-mill-far", "place": [122, -3, 0.3], "free": { "from": [96, -14, 9], "to": [132, 0, 16] }, "moment": "morning", "blade": 0.5 },
+    { "name": "22-mill-balcony", "place": [122, -3, 0.3], "free": { "from": [129.5, 14, 25], "to": [134, 5, 21.5] }, "moment": "morning", "blade": 0.5 },
+    { "name": "22-mill-side", "place": [122, -3, 0.3], "free": { "from": [133, 34, 16], "to": [134, 0, 16] }, "moment": "morning", "blade": 0.5 },
+    { "name": "23-brake-lever", "place": [120.8, -9, 0.3], "cam": [0.38, 9.15], "moment": "morning", "settle": 150 },
+    { "name": "25-tune-panel", "query": "?tune", "panel": true, "place": [10, 0, 0.3], "cam": [0.38, 9.15], "moment": "morning" }
+  ],
+  "grids": [
+    { "name": "17-landing-before-after", "cols": 2, "width": 1600, "tiles": ["01-baseline-play.png", "02-landing-lantern-horizon.png", "17-landing-now", "18-landing-dusk"] },
+    { "name": "19-net-before-after", "cols": 2, "width": 1600, "tiles": ["07b-standing-on-net.png", "19-net", "07b-standing-on-net.png", "19-net-gray"] },
+    { "name": "22-mill-before-after", "cols": 2, "width": 1600, "tiles": ["before-mill-far.jpg", "22-mill-far", "before-mill-balcony.jpg", "22-mill-balcony", "before-mill-side.jpg", "22-mill-side"] }
+  ]
+}
