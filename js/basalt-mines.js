@@ -15,7 +15,7 @@
      s 112        switch: straight to DK, right to a dead end (l 17 at s 124)
      s 124..136   DK's chamber under a sagging roof; DK holds the last beam
      s 137        rubble DK clears after the rescue; exit tunnel down to daylight
-     s 166, 168   the young villain at the launch pad, then the gate
+     s 166, 168   the young villain at the launch pad, then the gate; he strikes during the flight (index.html)
    Characters are GLB/glTF models (js/models.js); the parts built here are
    stand-ins that show until a model is installed.
    Load order: Three.js, GameShared, tuning, models, this file, the game script.
@@ -735,13 +735,8 @@ const BasaltMines = (() => {
       const m = new THREE.Mesh(kitGeometry("stone", () => new THREE.DodecahedronGeometry(1.5, 1)), H.mat(0x57525f, { flatShading: true }));
       m.visible = false; group.add(m); S.stoneMeshes.push(m);
     }
-    // the paint blob the young villain throws
-    S.paint = new THREE.Mesh(new THREE.SphereGeometry(0.4, 10, 8), new THREE.MeshBasicMaterial({ color: 0xb050ff }));
-    S.paint.visible = false; group.add(S.paint);
-    S.splat = new THREE.Mesh(new THREE.CircleGeometry(1.6, 20), new THREE.MeshBasicMaterial({ color: 0x9a40ff, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
-    S.splat.visible = false; group.add(S.splat);
 
-    const keep = [S.shrine, cart, lever.g, arrow, luigi.g, dk.g, dkBeam, spareBeam, beetle.g, jr.g, S.paint, S.splat, S.rubbleMesh]
+    const keep = [S.shrine, cart, lever.g, arrow, luigi.g, dk.g, dkBeam, spareBeam, beetle.g, jr.g, S.rubbleMesh]
       .concat(monkeys.map(m => m.g), breakables.map(b => b.mesh), coins.map(c => c.holder), S.stoneMeshes);
     if (FX.merge) S.mergeInfo = mergeStatic(keep);
     // characters cast shadows; the big strip does not
@@ -782,7 +777,7 @@ const BasaltMines = (() => {
       placeAt(dk.g, LAYOUT.dk.s, LAYOUT.dk.l, floorH(LAYOUT.dk.s), LAYOUT.dk.s - 5, 0);
       dk.arms.forEach((a, i) => { a.rotation.z = (i ? -1 : 1) * 0.35; });
       dkBeam.visible = true; spareBeam.visible = false;
-      jr.g.visible = false; S.paint.visible = false; S.splat.visible = false;
+      jr.g.visible = false;
       for (const m of S.stoneMeshes) m.visible = false;
       monkeys.forEach(m => { m.g.visible = true; });
       if (planet && planet.gate) planet.gate.holder.visible = false;
@@ -1056,24 +1051,8 @@ const BasaltMines = (() => {
       jr.g.position.addScaledVector(jr.g.position.clone().normalize(), Math.max(0, 1.6 - j.t * 3));
       jr.brush.rotation.x = -1.2 * smooth(0, 1, j.t);
       jr.tip.material.emissiveIntensity = 0.6 + 1.4 * smooth(0.5, 1.8, j.t);
-      if (j.t > 2.0) {
-        j.state = "throw"; j.t = 0;
-        j.from = jr.tip.getWorldPosition(new V3()).sub(center);
-        j.to = localPos(hs - 2.5, hl, terrainH(hs - 2.5, hl) + 0.05);
-        S.paint.visible = true;
-        ctx.Audio.fire();
-        ctx.hint("He is aiming his brush at you!", 4000);
-      }
-    } else if (j.state === "throw") {
-      const k = Math.min(1, j.t / 0.7);
-      S.paint.position.copy(j.from).lerp(j.to, k).addScaledVector(j.to.clone().normalize(), Math.sin(k * Math.PI) * 3);
-      if (k >= 1) {
-        j.state = "leave"; j.t = 0; S.paint.visible = false;
-        const up = j.to.clone().normalize();
-        S.splat.position.copy(j.to); S.splat.quaternion.setFromUnitVectors(new V3(0, 0, 1), up); S.splat.visible = true;
-        ctx.Particles.spawn(j.to.clone().add(center), 0xb050ff, 30, 4);
-        ctx.Audio.boom(); ctx.shake(0.2);
-      }
+      if (j.t > 0.8 && !j.taunt) { j.taunt = true; ctx.hint("He is aiming his brush at you!\nThen he laughs and flies off along the launch path...", 5000); ctx.Audio.fire(); }
+      if (j.t > 2.4) { j.state = "leave"; j.t = 0; ctx.Particles.spawn(jr.tip.getWorldPosition(new V3()), 0xb050ff, 20, 3); }
     } else if (j.state === "leave") {
       placeAt(jr.g, J.s, J.l, 1.5 * j.t * j.t * 4, hs, hl);
       jr.g.rotateY(j.t * 9);
@@ -1083,7 +1062,7 @@ const BasaltMines = (() => {
         if (planet && planet.gate) planet.gate.holder.visible = true;
         ctx.Audio.gate();
         ctx.toast("He flew off! The gate is open.", 2600);
-        ctx.hint("Step into the gate with Luigi and DK.", 6000);
+        ctx.hint("Step into the gate with Luigi and DK.\nWatch out for him on the way!", 6000);
       }
     }
   }
@@ -1192,7 +1171,10 @@ const BasaltMines = (() => {
       c.spin.rotation.y += dt * 3;
       if (Math.hypot(hs - c.s, hl - c.l) < 1.3 && Math.abs(hh - terrainH(c.s, c.l) - 0.6) < 1.6) {
         c.taken = true; c.holder.visible = false; S.coins++;
+        P.coins = (P.coins || 0) + 1;                  // coins carry over to stars 3 and 4 (abilities)
         ctx.Audio.collect();
+        if (P.coins % 10 === 0 && P.health < 3) { P.health++; ctx.toast("10 coins: a heart back!", 1600); }
+        else if (P.coins % 10 === 0) ctx.toast(P.coins + " coins!", 1200);
         ctx.Particles.spawn(worldPos(c.s, c.l, terrainH(c.s, c.l) + 1), 0xffd84a, 8, 2.5);
         env.refreshHud && env.refreshHud();
       }
@@ -1317,7 +1299,7 @@ const BasaltMines = (() => {
       const f = floorH(LAYOUT.dk.s);
       return { pos: worldPos(LAYOUT.cartStop - 4.5, -5.2, f + 3.6), look: worldPos(LAYOUT.dk.s + 1, 0, f + 2.2), kind: "rescue" };
     }
-    if (S.jr.state === "aim" || S.jr.state === "throw") {
+    if (S.jr.state === "aim") {
       const c = coordsAt(P.pos);
       return { pos: worldPos(c.s - 6, c.l - 3, heightAt(P.pos) + 3.4), look: worldPos(LAYOUT.jr.s, LAYOUT.jr.l, 1.4), kind: "villain" };
     }
@@ -1332,7 +1314,7 @@ const BasaltMines = (() => {
     if (S.cart && S.cart.state !== "parked") return "Free DK";
     return "Find who is knocking";
   }
-  function hudText() { return "🍌 " + objective() + (S.coins ? "   🪙 " + S.coins : ""); }
+  function hudText() { const n = (env && env.P && env.P.coins) || 0; return "🍌 " + objective() + (n ? "   🪙 " + n : ""); }
 
   const debug = {
     get state() { return S; }, layout: LAYOUT,
@@ -1355,11 +1337,14 @@ const BasaltMines = (() => {
     models: () => ({ luigi: luigi && luigi.g, dk: dk && dk.g, beetle: beetle && beetle.g, jr: jr && jr.g })
   };
 
+  // the young villain for the flight to the next star (index.html, the ambush in updateTransition)
+  function makeVillain(parent) { const v = makeJr(); v.model = withModel("bowserjr", v.g, [v.brush]); parent.add(v.g); return v; }
+
   function attach(e) { env = e; reset(); }
 
   return {
     configure, shapeGround, smoothGround, wantsSmooth, exitDir, build, attach, reset, update, query, drift, constrain,
-    punchHit, aim, scripted() {}, objective, hudText, debug, colliders, cameraHint, cameraFloor, cameraShot, cameraFocus, dayAxis,
+    punchHit, aim, scripted() {}, objective, hudText, makeVillain, debug, colliders, cameraHint, cameraFloor, cameraShot, cameraFocus, dayAxis,
     respawn: (P, hooks, restoreHealth) => respawn(P, hooks, restoreHealth),
     isLocked: () => false,
     get layout() { return LAYOUT; }

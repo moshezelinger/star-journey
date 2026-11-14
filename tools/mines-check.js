@@ -200,7 +200,7 @@ const H = require("./harness");
     return { passed, jr: [...seen], gate: bm.gateOpen, count: bm.rescueCount };
   });
   c.ok("the exit tunnel is open after the rescue", r.passed > 145, r);
-  c.ok("the young villain appears, throws paint and flies off", r.jr.includes("aim") && r.jr.includes("throw") && r.jr.includes("leave"), r);
+  c.ok("the young villain appears at the pad, aims and flies off", r.jr.includes("aim") && r.jr.includes("leave"), r);
   c.ok("the gate opens after the villain leaves", r.gate === true && r.count === 1, r);
   await shot("gate");
 
@@ -228,6 +228,17 @@ const H = require("./harness");
     return d.state;
   });
   c.ok("the gate launches to the next planet", r === "PLANET_TRANSITION", r);
+
+  // on the way out the young villain strikes: the hero lands painted (the opening of star 3)
+  let stages = new Set();
+  for (let i = 0; i < 120; i++) {
+    const t = await ev(() => ({ s: window.__dbg.state, tr: window.__dbg.transition, painted: window.__dbg.painted }));
+    if (t.tr) stages.add(t.tr.ambush);
+    if (t.state === "PLAYING") { r = t; break; }
+    await page.waitForTimeout(250);
+  }
+  r = await ev(() => ({ state: window.__dbg.state, planet: window.__dbg.active.name, painted: window.__dbg.painted }));
+  c.ok("the villain's paint hits the hero during the flight", r.state === "PLAYING" && r.painted === true && stages.has(3), Object.assign(r, { stages: [...stages] }));
 
   c.ok("no page errors", h.errors.length === 0, h.errors);
   const failed = c.report();

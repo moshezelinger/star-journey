@@ -26,9 +26,9 @@ const Models = (() => {
       license: "CC-BY-4.0", triangles: 17386, height: 1.75, yaw: 0, clip: 0, ready: false
     },
     dk: {
-      title: "Donkey Kong (Mario Kart 8 Deluxe)", author: "Austin Zimmermann", authorUrl: "https://sketchfab.com/AustinZimmermann",
-      url: "https://sketchfab.com/3d-models/donkey-kong-mario-kart-8-deluxe-243c32b79df542a88ecd74a5ede752c4",
-      license: "CC-BY-4.0", triangles: 4118, height: 3.0, yaw: 0, clip: 0, ready: false
+      title: "Donkey Kong 64", author: "chicosantossaraiva", authorUrl: "https://sketchfab.com/chicosantossaraiva",
+      url: "https://sketchfab.com/3d-models/donkey-kong-64-131973a2107e45e8a61822c556f252f2",
+      license: "CC-BY-4.0", triangles: 704, height: 3.2, yaw: 0, clip: 0, ready: true
     },
     goomba: {
       title: "Animated Goomba (Super Mario Bros)", author: "Yanez Designs", authorUrl: "https://sketchfab.com/Yanez-Designs",

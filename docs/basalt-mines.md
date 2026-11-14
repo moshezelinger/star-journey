@@ -18,7 +18,8 @@ Basalt Mines replaces the old "Crystal Planet" as the second of four stars. Stor
 | 124..136 | DK's chamber under a cracked, sagging roof; DK holds the last beam | Do not break the beam |
 | 137 | Rubble that DK clears after the rescue | |
 | 138..162 | Exit tunnel down to daylight | |
-| 165..169 | The young villain at the launch pad, then the gate | Cliffhanger for star 3 |
+| 165..169 | The young villain at the launch pad aims his brush, laughs and flies off; the gate opens | |
+| (flight) | On the way to the next star he flies in beside the hero and his paint hits: the hero glows purple from then on | The opening of star 3 |
 
 Checkpoints: `landing` 0, `training` 15, `valley` 37, `mine` 57.5, `junction` 101, `chamber` 121, `exit` 140 (only after the rescue). There is no void here: losing three hearts returns the hero to the last checkpoint with full health.
 
@@ -33,19 +34,32 @@ Checkpoints: `landing` 0, `training` 15, `valley` 37, `mine` 57.5, `junction` 10
 - **Camera**: the same follow camera as star 1, with this level's terrain and solids as the floor and the roof, block, rubble and cart as ray colliders. At the junction it backs off so Luigi, the switch, the cart and both tunnels fit in one frame. The rescue and the villain have fixed shots.
 - **Day and night**: the same cycle, aimed over the middle of this route (`dayAxis`). Cracks, gold and lamps glow brighter at night.
 
+## Coins (decision)
+
+Coins carry across the stars in `P.coins` (shown in the HUD). In the story they buy abilities in stars 3 and 4. Until then, every 10 coins gives a heart back (or a cheer when the hearts are full). Star 2 has 16: 5 in the gold vein, 8 in the grotto, 3 from the beetle. A new game resets them.
+
+## The villain's ambush (decision by Moshe)
+
+The young villain does not hit the hero at the pad; he hits him during the flight to the next star (`updateAmbush` in `index.html`). He appears beside the hero at a quarter of the flight, throws a paint blob at 42%, and leaves. `P.painted` stays on until a new game, and the hero glows purple (an emissive tint, no extra light). Star 3 (the Ink Swamp) starts from this state.
+
 ## Characters (GLB/glTF models)
 
 Characters are ready-made models in the Nintendo style (CLAUDE.md). The registry is `js/models.js`. Each model was checked on its Sketchfab page: CC-BY 4.0, downloadable, under 30 thousand triangles. Until a model's files are in `assets/<id>/`, the game shows a simple stand-in built in code (and never requests the missing file).
 
+**Installed:** `dk`, "Donkey Kong 64" by chicosantossaraiva (CC-BY 4.0, 704 triangles, 64KB). Its source page and licence were checked on Sketchfab; the files came from a public copy on GitHub (with the original `license.txt`), because Sketchfab downloads need a sign-in.
+
+**Not installed yet** (stand-ins until then):
+
 | id | Role | Model | Author |
 |---|---|---|---|
 | `luigi` | Luigi (star 1 balcony, star 2 switch) | [Luigi (Super Mario Bros)](https://sketchfab.com/3d-models/luigi-super-mario-bros-a79c8ef8419448c39f61fc32b2b19e7c) | Yanez Designs |
-| `dk` | DK | [Donkey Kong (Mario Kart 8 Deluxe)](https://sketchfab.com/3d-models/donkey-kong-mario-kart-8-deluxe-243c32b79df542a88ecd74a5ede752c4) | Austin Zimmermann |
 | `goomba` | Goomba (star 1) | [Animated Goomba (Super Mario Bros)](https://sketchfab.com/3d-models/animated-goomba-super-mario-bros-3c91cc4ac8144d82a05309679a3dbbd5) | Yanez Designs |
 | `paratroopa` | Winged koopa (star 1) | [Mario Kart 8 - Koopa Paratroopa](https://sketchfab.com/3d-models/mario-kart-8-koopa-paratroopa-2147c4e5ff5f43a89c3a07c5011c4295) | taej11503 |
 | `buzzy` | Basalt beetle | [Buzzy Beetle (Super Mario Bros)](https://sketchfab.com/3d-models/buzzy-beetle-super-mario-bros-8d3d39516f7b40d5aa19e85226940899) | Yanez Designs |
 | `ukiki` | Monkeys on the beams | [Ukiki](https://sketchfab.com/3d-models/ukiki-c71d5ac4570a46b69fc3bfa7b3e4a30e) | tirrellclark.75 |
 | `bowserjr` | The young villain | [Bowser Jr. (Mario Kart 8 Deluxe)](https://sketchfab.com/3d-models/bowser-jr-mario-kart-8-deluxe-8fd1397374a04d499ab4bd5bf90ffeac) | Austin Zimmermann |
+
+Tried and rejected: a "Luigi" (LukeMcQueen02) found on GitHub is Luigi from Pixar's Cars, not the Nintendo character; another Luigi (WeirdBrain) has 63 thousand triangles; a CC-BY Goomba (ValentinDebels) has 52 thousand triangles, which would push star 1 over its 350 thousand budget; another Goomba is under the Sketchfab Standard licence, which is not allowed here.
 
 To install one: open its page, sign in to Sketchfab (free), Download 3D Model, choose **glTF**, then run
 
@@ -77,15 +91,12 @@ The ground is one fine strip (0.6 units along the route, finer near it across) s
 
 `window.__dbg.goTo(1)` lands on star 2, `__dbg.powerPunch()` throws a charged punch, `__dbg.BasaltMines.debug` exposes the layout, terrain, breakables, beetle, stones, cart, switch, coins, rescue and villain state.
 
-- `node tools/mines-check.js` (28 checks): glove, quick and power punch on cracked rock, gold coins, the spur wall, walls that cannot be climbed, beetle armour and the stuck back, beetle charge and sidestep, stones on the track and safety in an alcove, the monkey running off, the cart block, wrong switch and retry, Luigi's switch, the warning at DK's beam, the rescue (once), DK clearing the rubble, the exit tunnel, the villain, the gate, and the camera at 32 spot and angle combinations. `--shots` writes `tools/out/mines-rescue.png` and `mines-gate.png`.
+- `node tools/mines-check.js` (30 checks): glove, quick and power punch on cracked rock, gold coins, the spur wall, walls that cannot be climbed, beetle armour and the stuck back, beetle charge and sidestep, stones on the track and safety in an alcove, the monkey running off, the cart block, wrong switch and retry, Luigi's switch, the warning at DK's beam, the rescue (once), DK clearing the rubble, the exit tunnel, the villain at the pad, the gate, the paint hit during the flight, and the camera at 32 spot and angle combinations. `--shots` writes `tools/out/mines-rescue.png` and `mines-gate.png`.
 
 ## What was verified, and how
 
-Headless Chromium with software rendering only. Frame rate and load time were not measured, touch was not tried on star 2, no child has played it, and none of the GLB models is installed yet (all characters are stand-ins).
+Headless Chromium with software rendering only. Frame rate and load time were not measured, touch was not tried on star 2, and no child has played it. DK is the only character model installed; the rest are stand-ins.
 
 ## Open questions for Moshe
 
-- Power punch by holding the punch button: right for ages 7 to 8, or a separate touch button?
-- Coins: what should they open? In the story, coins buy abilities only in stars 3 and 4.
-- The young villain only throws paint near the hero and flies off. Should the brush already hit the hero here (the opening of star 3)?
-- Download the seven models above (Sketchfab needs a free sign-in), or allow a Sketchfab API key in the cloud environment so an agent can do it.
+- Download the six models that are not installed (Sketchfab needs a free sign-in), or allow a Sketchfab API key in the cloud environment `star-journey` so an agent can do it.

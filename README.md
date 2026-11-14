@@ -40,4 +40,5 @@ python3 -m http.server 8765
 
 - Mario model: "Mario Movie (Super Mario Movie)" by Guilherme Navarro, CC-BY-4.0, [source](https://sketchfab.com/3d-models/mario-movie-super-mario-movie-13d05e3c76a148568decf1e8f25888f8).
 - Bowser model: "Bowser Super Mario Bros.1" by Vandacvi, CC-BY-4.0 (see `assets/bowser/license.txt`).
+- Donkey Kong model: "Donkey Kong 64" by chicosantossaraiva, CC-BY-4.0, [source](https://sketchfab.com/3d-models/donkey-kong-64-131973a2107e45e8a61822c556f252f2) (see `assets/dk/license.txt`).
 - Inspired by the Super Mario games. Unofficial, non-commercial fan project. Mario, Luigi, Bowser and related characters are trademarks of Nintendo. The code is not affiliated with or endorsed by Nintendo.

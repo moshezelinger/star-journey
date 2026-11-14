@@ -867,7 +867,9 @@ const P = {
   health: 3,
   invuln: 0,
   airJumps: 1, coyote: 0, punchT: 0, punchHit: false, climbing: false, punchDir: new THREE.Vector3(),
-  hasPower: false, charge: 0, punchPower: false   // power punch, found in star 2
+  hasPower: false, charge: 0, punchPower: false,  // power punch, found in star 2
+  coins: 0,          // coins carry across the stars (abilities in stars 3 and 4)
+  painted: false     // hit by the young villain's paint on the way from star 2 (the opening of star 3)
 };
 const PUNCH_TIME = 0.38;
 const PUNCH_ARM = { x: 1.5, y: 1.0 };   // shoulder offsets for the punch pose (checked visually)
@@ -1621,7 +1623,8 @@ function resetGame() {
   });
   transition = null;
   bossReset();
-  P.hasPower = false; P.charge = 0;
+  P.hasPower = false; P.charge = 0; P.coins = 0; P.painted = false;
+  villain.g.visible = false; villainPaint.visible = false;
   for (const k in LEVELS) LEVELS[k].reset();
   DayCycle.reset();                       // restart begins in the morning again
   camZoom = CAM_DEFAULT.zoom; camPitch = CAM_DEFAULT.pitch;
@@ -1670,7 +1673,8 @@ function startTransition(nextIndex) {
     b: mid.add(away),
     c: endPos,
     next: nextIndex,
-    endDir: endDir
+    endDir: endDir,
+    ambush: active.def.theme === "mines" && !P.painted ? { stage: 0 } : null   // the young villain strikes on the way
   };
   hint("Launching to " + target.name, 2600);
 }
@@ -2159,18 +2163,63 @@ function updateTransition(dt) {
     P.up.copy(targetUp);
     camUp.lerp(targetUp, Math.min(1, dt * 3)).normalize();
     const camWant = pos.clone().addScaledVector(dir, -11).addScaledVector(camUp, 3.5);
-    camera.position.lerp(camWant, Math.min(1, dt * 4));
+    const close = tr.ambush && tr.ambush.stage >= 1 && tr.ambush.stage < 4;     // keep up with the hero while the villain strikes
+    camera.position.lerp(camWant, Math.min(1, dt * (close ? 12 : 4)));
     camera.up.copy(camUp);
     camera.lookAt(pos);
   }
 
+  if (tr.ambush) updateAmbush(tr, k, pos, dt);
+
   if (k >= 1) {
     transition = null;
+    villain.g.visible = false; villainPaint.visible = false;
     landOnPlanet(tr.next, tr.endDir);
     state = S.PLAYING;
     toast("Welcome to " + active.name);
     if (active.springs.length) hint("The purple pads bounce you high.\nFollow the beams of light to the shards.", 6000);
     Particles.spawn(P.pos, 0xffffff, 24, 4);
+  }
+}
+
+// The young villain's ambush on the flight out of star 2 (game-design/four-planets.md: he aims the
+// brush straight at the hero). He flies in beside the hero, throws a blob of paint that hits, and
+// leaves; the hero stays painted (a purple glow) as the opening of star 3.
+const villain = BasaltMines.makeVillain(scene);
+villain.g.visible = false;
+const villainPaint = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 10), new THREE.MeshBasicMaterial({ color: 0xb050ff }));
+villainPaint.visible = false; scene.add(villainPaint);
+function updateAmbush(tr, k, pos, dt) {
+  const a = tr.ambush;
+  const fwd = tr.c.clone().sub(tr.a).normalize();
+  const side = new THREE.Vector3().crossVectors(fwd, P.up).normalize();
+  const spot = pos.clone().addScaledVector(side, 5.5).addScaledVector(P.up, 2.2).addScaledVector(fwd, 3);
+  if (a.stage === 0 && k > 0.25) {
+    a.stage = 1; villain.g.visible = true; villain.g.position.copy(spot).addScaledVector(P.up, 14);
+    Audio.roar(); toast("The young villain!", 2000);
+  }
+  if (a.stage >= 1 && a.stage < 4) {
+    villain.g.position.lerp(spot, Math.min(1, dt * 4));
+    villain.g.up.copy(P.up); villain.g.lookAt(pos);
+    villain.brush.rotation.x = -1.2;
+  }
+  if (a.stage === 1 && k > 0.42) { a.stage = 2; a.t = 0; villainPaint.visible = true; Audio.fire(); }
+  if (a.stage === 2) {
+    a.t += dt;
+    const from = villain.tip.getWorldPosition(new THREE.Vector3());
+    villainPaint.position.copy(from).lerp(pos.clone().addScaledVector(P.up, 0.9), Math.min(1, a.t / 0.45));
+    if (a.t >= 0.45) {
+      a.stage = 3; villainPaint.visible = false; P.painted = true;
+      Particles.spawn(pos.clone().addScaledVector(P.up, 0.9), 0xb050ff, 40, 5);
+      Audio.boom(); camShake = 0.5; Audio.hurt();
+      toast("Splat! His paint hit Mario!", 2600);
+      hint("The young villain's paint... Mario feels strange.\n(To be continued in star 3: the Ink Swamp.)", 7000);
+    }
+  }
+  if (a.stage === 3 && k > 0.62) a.stage = 4;
+  if (a.stage === 4) {
+    villain.g.position.addScaledVector(P.up, dt * 18).addScaledVector(side, dt * 10);
+    if (k > 0.85) villain.g.visible = false;
   }
 }
 
@@ -2278,7 +2327,14 @@ function heroNightGlow() {
   }
   const night = (GameShared.sky && GameShared.sky.night) || 0;
   const k = levelOf(active) ? 0.28 * night : 0;
-  for (const m of heroMats) m.emissiveIntensity = k;
+  // painted by the young villain: a purple glow over his own texture
+  const paint = P.painted ? 0.42 + 0.1 * Math.sin(clock.elapsedTime * 3) : 0;
+  for (const m of heroMats) {
+    const wantMap = paint ? null : (m.map || null);       // a flat purple, not purple times his texture
+    if (m.emissiveMap !== wantMap) { m.emissiveMap = wantMap; m.needsUpdate = true; }
+    if (paint) { m.emissive.setHex(0x9a3cff); m.emissiveIntensity = paint; }
+    else { if (m.map) m.emissive.setHex(0xffffff); m.emissiveIntensity = k; }
+  }
 }
 
 // ---------- buttons ----------
@@ -2318,6 +2374,7 @@ window.__dbg = { P, camera, camDir, WindGardens, BasaltMines, QUALITY, Models, g
   // land on a planet by index (QA: start a test on star 2 without the launch)
   goTo(i) { transition = null; landOnPlanet(i); state = S.PLAYING; },
   powerPunch() { P.charge = TUNE.power.charge + 0.01; punchReleased = true; },
+  get painted() { return P.painted; }, get transition() { return transition && { k: transition.t / transition.dur, ambush: transition.ambush && transition.ambush.stage }; },
   get health() { return P.health; }, set health(v) { P.health = v; },
   setInvuln(v) { P.invuln = v; },
   setCam(pitch, zoom) { if (pitch !== undefined) camPitch = pitch; if (zoom !== undefined) camZoom = zoom; },
