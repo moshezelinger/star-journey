@@ -18,6 +18,7 @@ const TunePanel = (() => {
     goomba: { _title: "Goomba", sightRange: [6, 24, 1, "sight range"], warnTime: [0.3, 2.5, 0.05, "warning s"], chargeTime: [0.5, 3, 0.1, "charge s"], chargeSpeed: [3, 14, 0.5, "charge speed"], recoverTime: [0.3, 3, 0.1, "dizzy s"] },
     koopa: { _title: "Winged koopa", trackTime: [0.5, 3, 0.1, "follows s"], telegraphTime: [0.2, 1.6, 0.05, "shadow flash s"], diveTime: [0.15, 0.8, 0.01, "dive s"], dazedTime: [0.5, 4, 0.1, "dazed s"] },
     wind: { _title: "Wind", drift: [0, 1.5, 0.05, "drift"] },
+    flutter: { _title: "Flutter (star 3)", time: [0.3, 2, 0.05, "hover s"], lift: [0.3, 1.2, 0.05, "lift share"] },
     power: { _title: "Power punch (star 2)", charge: [0.2, 1.5, 0.05, "hold to charge s"] },
     beetle: { _title: "Basalt beetle", sightRange: [6, 24, 1, "sight range"], warnTime: [0.3, 2.5, 0.05, "warning s"], chargeTime: [0.5, 3, 0.1, "charge s"], chargeSpeed: [3, 16, 0.5, "charge speed"], stuckTime: [0.8, 5, 0.1, "stuck s"] },
     rocks: { _title: "Rolling stones", interval: [1.2, 6, 0.1, "seconds between stones"], speed: [3, 14, 0.5, "roll speed"] },

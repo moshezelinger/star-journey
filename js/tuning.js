@@ -45,6 +45,10 @@ const TUNE_DEFAULTS = {
   power: {
     charge: 0.5        // seconds the punch button is held to charge a power punch (star 2 on)
   },
+  flutter: {
+    time: 1.0,         // star 3: seconds the dinosaur can hover while jump is held
+    lift: 0.9          // share of gravity the flutter cancels (1 = floats level)
+  },
   beetle: {
     sightRange: 14,    // basalt beetle starts its warning when the hero is this close
     warnTime: 0.8,     // seconds of warning before it charges

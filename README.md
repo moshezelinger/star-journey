@@ -1,12 +1,12 @@
 # מסע בין כוכבים
 # Star Journey: Following the Lantern's Light
 
-A browser platformer on small round planets, built with Three.js and no build step. Star 1, **Wind Gardens**, is playable end to end: spot the brother's lantern, learn to punch and double jump, cross a broken bridge in changing wind, and stop a windmill to rescue him. Star 2, **Basalt Mines**, is playable end to end too: find the power glove, learn what to break, climb a mine track under rolling stones, and send a cart of beams to the friend knocking inside the mountain.
+A browser platformer on small round planets, built with Three.js and no build step. Star 1, **Wind Gardens**, is playable end to end: spot the brother's lantern, learn to punch and double jump, cross a broken bridge in changing wind, and stop a windmill to rescue him. Star 2, **Basalt Mines**, is playable end to end too: find the power glove, learn what to break, climb a mine track under rolling stones, and send a cart of beams to the friend knocking inside the mountain. Star 3, **Ink Swamp**, too: the hero is painted by the young villain and runs off, and his brother rides a dinosaur through the swamp to bring him back.
 
 - **Play online:** [moshezelinger.github.io/star-journey](https://moshezelinger.github.io/star-journey/)
 - **Play locally:** `python3 -m http.server 8765`, then open `http://localhost:8765/`. Keys: WASD, Space (again in the air), J or F to punch, R to reset the camera.
 - **Build diary with screenshots:** [docs/showcase](docs/showcase/README.md)
-- **Technical notes:** [docs/wind-gardens.md](docs/wind-gardens.md), [docs/basalt-mines.md](docs/basalt-mines.md)
+- **Technical notes:** [docs/wind-gardens.md](docs/wind-gardens.md), [docs/basalt-mines.md](docs/basalt-mines.md), [docs/ink-swamp.md](docs/ink-swamp.md)
 - **Story and the four stars:** [game-design/four-planets.md](game-design/four-planets.md) (Hebrew)
 
 Status: prototype. Characters other than the hero and Bowser are simple stand-ins until their models are installed (`js/models.js`), and the level has not yet been tested on a real touch device or with a child.
@@ -41,4 +41,7 @@ python3 -m http.server 8765
 - Mario model: "Mario Movie (Super Mario Movie)" by Guilherme Navarro, CC-BY-4.0, [source](https://sketchfab.com/3d-models/mario-movie-super-mario-movie-13d05e3c76a148568decf1e8f25888f8).
 - Bowser model: "Bowser Super Mario Bros.1" by Vandacvi, CC-BY-4.0 (see `assets/bowser/license.txt`).
 - Donkey Kong model: "Donkey Kong 64" by chicosantossaraiva, CC-BY-4.0, [source](https://sketchfab.com/3d-models/donkey-kong-64-131973a2107e45e8a61822c556f252f2) (see `assets/dk/license.txt`).
+- Yoshi model: "DS DSi - Super Mario 64 DS - Yoshi" by DokigerElRojito, CC-BY-4.0, [source](https://sketchfab.com/3d-models/ds-dsi-super-mario-64-ds-yoshi-8772d361a56949c0902401b73b1e749e) (see `assets/yoshi/license.txt`).
+- Toad model: "TOAD" by ijosephpinta, CC-BY-4.0, [source](https://sketchfab.com/3d-models/toad-be009511be534d3e9da798f120dcd295) (see `assets/toad/license.txt`).
+- Piranha Plant model: "Piranha Plant" by Marcus Vinicius, CC-BY-4.0, [source](https://sketchfab.com/3d-models/piranha-plant-18b880dc57d34eea9604bef19571a10e) (see `assets/piranha/license.txt`).
 - Inspired by the Super Mario games. Unofficial, non-commercial fan project. Mario, Luigi, Bowser and related characters are trademarks of Nintendo. The code is not affiliated with or endorsed by Nintendo.

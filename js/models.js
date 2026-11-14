@@ -50,6 +50,33 @@ const Models = (() => {
       url: "https://sketchfab.com/3d-models/ukiki-c71d5ac4570a46b69fc3bfa7b3e4a30e",
       license: "CC-BY-4.0", triangles: 317, height: 1.1, yaw: 0, clip: 0, ready: false
     },
+    // ---- star 3, the Ink Swamp ----
+    yoshi: {
+      title: "DS DSi - Super Mario 64 DS - Yoshi", author: "DokigerElRojito", authorUrl: "https://sketchfab.com/dokigerelrojito",
+      url: "https://sketchfab.com/3d-models/ds-dsi-super-mario-64-ds-yoshi-8772d361a56949c0902401b73b1e749e",
+      license: "CC-BY-4.0", triangles: 687, height: 1.7, yaw: 0, clip: 0, ready: true
+    },
+    toad: {
+      title: "TOAD", author: "ijosephpinta", authorUrl: "https://sketchfab.com/ijosephpinta",
+      url: "https://sketchfab.com/3d-models/toad-be009511be534d3e9da798f120dcd295",
+      license: "CC-BY-4.0", triangles: 14458, height: 1.15, yaw: 0, clip: 0, ready: true
+    },
+    piranha: {
+      title: "Piranha Plant", author: "Marcus Vinicius", authorUrl: "https://sketchfab.com/ramosmarcus17",
+      url: "https://sketchfab.com/3d-models/piranha-plant-18b880dc57d34eea9604bef19571a10e",
+      license: "CC-BY-4.0", triangles: 794, height: 2.4, yaw: 0, clip: 0, ready: true
+    },
+    blooper: {
+      title: "Blooper (Super Mario Bros)", author: "Yanez Designs", authorUrl: "https://sketchfab.com/Yanez-Designs",
+      url: "https://sketchfab.com/3d-models/blooper-super-mario-bros-0196e012c5a3454f9ad0eab311967373",
+      license: "CC-BY-4.0", triangles: 3562, height: 1.8, yaw: 0, clip: 0, ready: false
+    },
+    // the hero himself as a second character (star 3: the painted hero runs on his own); same file as the player
+    mario: {
+      title: "Mario Movie (Super Mario Movie)", author: "Guilherme Navarro", authorUrl: "",
+      url: "https://sketchfab.com/3d-models/mario-movie-super-mario-movie-13d05e3c76a148568decf1e8f25888f8",
+      license: "CC-BY-4.0", path: "mario_movie_super_mario_movie.glb", height: 1.55, yaw: 0, clip: 0, ready: true
+    },
     bowserjr: {
       title: "Bowser Jr. (Mario Kart 8 Deluxe)", author: "Austin Zimmermann", authorUrl: "https://sketchfab.com/AustinZimmermann",
       url: "https://sketchfab.com/3d-models/bowser-jr-mario-kart-8-deluxe-8fd1397374a04d499ab4bd5bf90ffeac",
@@ -90,7 +117,7 @@ const Models = (() => {
     const h = { id, holder, standIn: standIn || null, model: null, ready: false, mixer: null, failed: false };
     handles.push(h);
     if (!spec || !spec.ready || typeof THREE.GLTFLoader !== "function") return h;
-    new THREE.GLTFLoader().load("assets/" + id + "/" + (spec.file || "scene.gltf"), (gltf) => {
+    new THREE.GLTFLoader().load(spec.path || ("assets/" + id + "/" + (spec.file || "scene.gltf")), (gltf) => {
       const model = gltf.scene;
       model.traverse(m => {
         if (!m.isMesh) return;

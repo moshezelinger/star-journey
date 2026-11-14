@@ -198,6 +198,7 @@
 <script src="js/models.js"></script>
 <script src="js/wind-gardens.js"></script>
 <script src="js/basalt-mines.js"></script>
+<script src="js/ink-swamp.js"></script>
 <script src="js/tune-panel.js"></script>
 <script>
 "use strict";
@@ -403,8 +404,8 @@ const PLANET_DEFS = [
     ground: 0x3f9a3a, low: 0x2c6e30, key: 233, theme: "mines", hearts: true, spawnDir: new THREE.Vector3(-0.3, 1, 0.3)
   },
   {
-    name: "Tiny Moon", center: new THREE.Vector3(6, 52, -122).multiplyScalar(WORLD_SCALE), radius: 6 * WORLD_SCALE, gravity: 13,
-    ground: 0x9fb4c8, low: 0x6a7c92, key: 196, theme: "moon", spawnDir: new THREE.Vector3(0.2, 1, 0.4)
+    name: "Ink Swamp", center: new THREE.Vector3(6, 52, -122).multiplyScalar(WORLD_SCALE), radius: 14 * WORLD_SCALE, gravity: 24, detail: 40,
+    ground: 0x4f7a4a, low: 0x2f4f3a, key: 208, theme: "swamp", hearts: true, spawnDir: new THREE.Vector3(0.2, 1, 0.4)
   },
   {
     name: "Bowser's Star Garden", center: new THREE.Vector3(84, 6, -196).multiplyScalar(WORLD_SCALE), radius: 10 * WORLD_SCALE, gravity: 22,
@@ -413,7 +414,7 @@ const PLANET_DEFS = [
 ];
 
 // Star levels: each theme with its own module answers the same hooks (terrain, physics, punch, camera, HUD).
-const LEVELS = { wind: WindGardens, mines: BasaltMines };
+const LEVELS = { wind: WindGardens, mines: BasaltMines, swamp: InkSwamp };
 function levelOf(p) { return (p && LEVELS[p.def.theme]) || null; }
 
 const planets = [];
@@ -868,6 +869,7 @@ const P = {
   invuln: 0,
   airJumps: 1, coyote: 0, punchT: 0, punchHit: false, climbing: false, punchDir: new THREE.Vector3(),
   hasPower: false, charge: 0, punchPower: false,  // power punch, found in star 2
+  flutterT: 0,       // star 3: the dinosaur's flutter time left
   coins: 0,          // coins carry across the stars (abilities in stars 3 and 4)
   painted: false     // hit by the young villain's paint on the way from star 2 (the opening of star 3)
 };
@@ -1425,12 +1427,13 @@ const keys = {};
 window.addEventListener("keydown", e => {
   if (TunePanel.owns(e.target)) return;           // typing in the tuning panel does not move Mario
   keys[e.code] = true;
-  if (e.code === "Space") { e.preventDefault(); if (!e.repeat) jumpQueued = true; }
+  if (e.code === "Space") { e.preventDefault(); if (!e.repeat) { jumpQueued = true; jumpHeld = true; } }
   if ((e.code === "KeyJ" || e.code === "KeyF" || e.code === "KeyK") && !e.repeat) { punchQueued = true; punchHeld = true; }
   if (e.code === "KeyR" && !e.repeat) resetCamera();
 });
 window.addEventListener("keyup", e => {
   keys[e.code] = false;
+  if (e.code === "Space") jumpHeld = false;
   if ((e.code === "KeyJ" || e.code === "KeyF" || e.code === "KeyK") && punchHeld) { punchHeld = false; punchReleased = true; }
 });
 
@@ -1707,6 +1710,18 @@ const chargeGlow = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10),
 chargeGlow.position.set(-0.42, 0.95, 0.45);
 player.add(chargeGlow);
 let chargeSpark = 0;
+// The player's look: the hero's own model, or what the level gives (star 3: Luigi, then Luigi on the dinosaur)
+let currentAvatar = null;
+function updateAvatar() {
+  const L = levelOf(active);
+  const av = (L && L.avatar && state !== S.MENU) ? L.avatar() : null;
+  if (av !== currentAvatar) {
+    if (currentAvatar) player.remove(currentAvatar);
+    if (av) player.add(av);
+    currentAvatar = av;
+  }
+  playerRig.visible = !av;
+}
 function updateChargeGlow(dt) {
   const k = P.hasPower ? clamp(P.charge / TUNE.power.charge, 0, 1) : 0;
   const ready = k >= 1;
@@ -1740,6 +1755,7 @@ function updatePlaying(dt) {
   }
 
   const wg = levelOf(active);
+  const ab = (wg && wg.abilities) ? wg.abilities() : null;    // star 3: Luigi on the dinosaur (flutter, tongue)
   if (wg) DayCycle.update(dt);         // only while playing, so pausing pauses the day
   if (wg && !wg.isLocked()) {          // on the balcony, swing the camera to the side of the blades
     const hintDir = camYawIdle > 2 ? wg.cameraHint(P) : null;
@@ -1786,14 +1802,15 @@ function updatePlaying(dt) {
     P.punchDir.copy(projectTangent(moving ? moveDir : (P.face.lengthSq() ? P.face : camDir), up));
     if (wg) P.punchDir.copy(wg.aim(P, P.punchDir, up));
     P.face.copy(P.punchDir);
-    vTan.addScaledVector(P.punchDir, 3.5);
-    Audio.noise(0.1, 0.14);
+    if (ab && ab.tongue) Audio.tone(700, 0.12, "sine", 0.12, 1200);       // the tongue: no lunge
+    else { vTan.addScaledVector(P.punchDir, 3.5); Audio.noise(0.1, 0.14); }
   }
   punchQueued = false;
   // power punch: once the glove is found (star 2), holding Punch charges and letting go smashes
-  if (P.hasPower && punchHeld) P.charge += dt;
+  const canPower = P.hasPower && !(wg && wg.avatar && wg.avatar());
+  if (canPower && punchHeld) P.charge += dt;
   if (punchReleased) {
-    if (P.hasPower && P.charge >= TUNE.power.charge) {
+    if (canPower && P.charge >= TUNE.power.charge) {
       P.punchT = PUNCH_TIME; P.punchHit = false; P.punchPower = true;
       P.punchDir.copy(projectTangent(moving ? moveDir : (P.face.lengthSq() ? P.face : camDir), up));
       if (wg) P.punchDir.copy(wg.aim(P, P.punchDir, up));
@@ -1814,6 +1831,11 @@ function updatePlaying(dt) {
       vRad.copy(up).multiplyScalar(P.jump * jumpScale);
       P.grounded = false; P.coyote = 0; P.airJumps = 1;
       Audio.jump();
+    } else if (P.airJumps > 0 && ab && ab.flutter) {
+      // the dinosaur's flutter: a small hop, then hovering while the button is held (TUNE.flutter)
+      vRad.copy(up).multiplyScalar(Math.max(vRad.dot(up), P.jump * 0.35 * jumpScale));
+      P.airJumps--; P.flutterT = TUNE.flutter.time;
+      Audio.tone(520, 0.5, "triangle", 0.1, 760);
     } else if (P.airJumps > 0) {
       vRad.copy(up).multiplyScalar(P.jump * 0.92 * jumpScale);
       P.airJumps--;
@@ -1826,6 +1848,13 @@ function updatePlaying(dt) {
   // gravity + integrate
   const prevPos = P.pos.clone();
   const prevH = prevPos.distanceTo(active.center) - active.radius;
+  if (P.flutterT > 0) {
+    if (jumpHeld && !P.grounded) {
+      P.flutterT -= dt;
+      vRad.addScaledVector(up, active.gravity * TUNE.flutter.lift * dt);
+      if (Math.random() < 0.3) Particles.spawn(P.pos.clone().addScaledVector(up, 0.4), 0xffffff, 2, 1);
+    } else P.flutterT = 0;
+  }
   vRad.addScaledVector(up, -active.gravity * dt);
   P.vel.copy(vTan).add(vRad);
   P.pos.addScaledVector(P.vel, dt);
@@ -2271,6 +2300,7 @@ function animate() {
 
   Particles.update(dt);
   Models.update(dt);
+  updateAvatar();
   Audio.update();
   starfield.position.copy(camera.position);
   updatePlanetDetail();
@@ -2362,7 +2392,7 @@ landOnPlanet(0);
 state = S.MENU;
 // test/QA access (see docs/wind-gardens.md)
 let dbgPause = false;
-window.__dbg = { P, camera, camDir, WindGardens, BasaltMines, QUALITY, Models, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },
+window.__dbg = { P, camera, get camDir() { return camDir; }, WindGardens, BasaltMines, InkSwamp, QUALITY, Models, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },
   get ready() { return !!player.userData.ready; },
   // place the hero at route coordinates (s, l, height above the base sphere), facing +s
   place(s, l, h, back) {
@@ -2374,6 +2404,7 @@ window.__dbg = { P, camera, camDir, WindGardens, BasaltMines, QUALITY, Models, g
   // land on a planet by index (QA: start a test on star 2 without the launch)
   goTo(i) { transition = null; landOnPlanet(i); state = S.PLAYING; },
   powerPunch() { P.charge = TUNE.power.charge + 0.01; punchReleased = true; },
+  setJumpHeld(v) { jumpHeld = !!v; },
   get painted() { return P.painted; }, get transition() { return transition && { k: transition.t / transition.dur, ambush: transition.ambush && transition.ambush.stage }; },
   get health() { return P.health; }, set health(v) { P.health = v; },
   setInvuln(v) { P.invuln = v; },

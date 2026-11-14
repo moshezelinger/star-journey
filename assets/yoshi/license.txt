@@ -1,0 +1,11 @@
+Model Information:
+* title:	DS DSi - Super Mario 64 DS - Yoshi
+* source:	https://sketchfab.com/3d-models/ds-dsi-super-mario-64-ds-yoshi-8772d361a56949c0902401b73b1e749e
+* author:	DokigerElRojito (https://sketchfab.com/dokigerelrojito)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "DS DSi - Super Mario 64 DS - Yoshi" (https://sketchfab.com/3d-models/ds-dsi-super-mario-64-ds-yoshi-8772d361a56949c0902401b73b1e749e) by DokigerElRojito (https://sketchfab.com/dokigerelrojito) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
