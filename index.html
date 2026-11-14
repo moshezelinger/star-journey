@@ -195,7 +195,9 @@
 <script src="js/shared.js"></script>
 <script src="js/tuning.js"></script>
 <script src="js/day-cycle.js"></script>
+<script src="js/models.js"></script>
 <script src="js/wind-gardens.js"></script>
+<script src="js/basalt-mines.js"></script>
 <script src="js/tune-panel.js"></script>
 <script>
 "use strict";
@@ -397,8 +399,8 @@ const PLANET_DEFS = [
     ground: 0x76c862, low: 0x58ad54, key: 220, theme: "wind", hearts: true, spawnDir: new THREE.Vector3(0, 1, 0.2)
   },
   {
-    name: "Crystal Planet", center: new THREE.Vector3(74, 16, -46).multiplyScalar(WORLD_SCALE), radius: 8 * WORLD_SCALE, gravity: 24,
-    ground: 0x5f6fd0, low: 0x3a3f8a, key: 262, theme: "crystal", spawnDir: new THREE.Vector3(-0.3, 1, 0.3)
+    name: "Basalt Mines", center: new THREE.Vector3(74, 16, -46).multiplyScalar(WORLD_SCALE), radius: 15 * WORLD_SCALE, gravity: 24, detail: 42,
+    ground: 0x3f9a3a, low: 0x2c6e30, key: 233, theme: "mines", hearts: true, spawnDir: new THREE.Vector3(-0.3, 1, 0.3)
   },
   {
     name: "Tiny Moon", center: new THREE.Vector3(6, 52, -122).multiplyScalar(WORLD_SCALE), radius: 6 * WORLD_SCALE, gravity: 13,
@@ -409,6 +411,10 @@ const PLANET_DEFS = [
     ground: 0xd873c8, low: 0x8b3fa8, key: 147, theme: "garden", spawnDir: new THREE.Vector3(0.45, 0.8, 0.4), boss: true
   }
 ];
+
+// Star levels: each theme with its own module answers the same hooks (terrain, physics, punch, camera, HUD).
+const LEVELS = { wind: WindGardens, mines: BasaltMines };
+function levelOf(p) { return (p && LEVELS[p.def.theme]) || null; }
 
 const planets = [];
 const UP_Y = new THREE.Vector3(0, 1, 0);
@@ -516,10 +522,11 @@ function buildPlanet(def, index) {
   const detail = def.detail || Math.max(4, Math.round(def.radius / 3.5));
   const bodyGeo = new THREE.IcosahedronGeometry(def.radius, detail);
   paintGround(bodyGeo, def, index);
-  if (def.theme === "wind") { WindGardens.configure(def); WindGardens.shapeGround(bodyGeo); }
-  const smoothWind = def.theme === "wind" && FX.path && FX.canyon;
-  if (smoothWind) WindGardens.smoothGround(bodyGeo, groundTint(def, index));
-  const body = new THREE.Mesh(bodyGeo, mat(0xffffff, { roughness: 0.95, vertexColors: true, flatShading: !smoothWind }));
+  const LV = LEVELS[def.theme] || null;
+  if (LV) { LV.configure(def); LV.shapeGround(bodyGeo); }
+  const smoothLv = !!(LV && LV.wantsSmooth());
+  if (smoothLv) LV.smoothGround(bodyGeo, groundTint(def, index));
+  const body = new THREE.Mesh(bodyGeo, mat(0xffffff, { roughness: 0.95, vertexColors: true, flatShading: !smoothLv }));
   group.add(body);
 
   const glow = new THREE.Mesh(
@@ -544,8 +551,8 @@ function buildPlanet(def, index) {
   const spawnAxis = def.spawnDir.clone().normalize();
 
   // ---- decorations per theme ----
-  if (def.theme === "wind") {
-    WindGardens.build(p, group, { mat: mat, rng: rng, makeBeam: makeBeam, tint: groundTint(def, index) });
+  if (LV) {
+    LV.build(p, group, { mat: mat, rng: rng, makeBeam: makeBeam, tint: groundTint(def, index) });
     // sun shadows (issue #5): solid scenery casts and receives; the ground only receives
     if (FX.shadows) group.traverse(o => {
       if (!o.isMesh) return;
@@ -623,7 +630,7 @@ function buildPlanet(def, index) {
   }
 
   // ---- star shards (within reach of the landing spot, each with a light pillar) ----
-  const shardCount = (def.boss || def.theme === "wind") ? 0 : 5;
+  const shardCount = (def.boss || LV) ? 0 : 5;
   const used = [];
   for (let i = 0; i < shardCount; i++) {
     let dir;
@@ -645,7 +652,7 @@ function buildPlanet(def, index) {
 
   // ---- exit gate (all planets except the last) ----
   if (index < PLANET_DEFS.length - 1) {
-    const exitDir = def.theme === "wind" ? WindGardens.exitDir() : randomDirInCap(rand, spawnAxis, 0.5, 1.2);
+    const exitDir = LV ? LV.exitDir() : randomDirInCap(rand, spawnAxis, 0.5, 1.2);
     p.exitDir = exitDir.clone();
     const holder = new THREE.Group();
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.16, 8, 28), MAT.gate);
@@ -714,10 +721,14 @@ const AutoRes = (() => {
     get pixelRatio() { return pr; }
   };
 })();
-{ // the sun turns over the middle of the route (s = 70)
-  const mid = WindGardens.debug.dirAt(70, 0), ahead = WindGardens.debug.dirAt(71, 0);
-  DayCycle.configure(mid, ahead.sub(mid));
+// the sun turns over the middle of the route of the star the hero is on (each level's dayAxis)
+function configureDay(p) {
+  const L = levelOf(p);
+  if (!L) return;
+  const a = L.dayAxis();
+  DayCycle.configure(a.up, a.forward);
 }
+configureDay(planets[0]);
 
 // ---------- particles ----------
 const Particles = {
@@ -855,7 +866,8 @@ const P = {
   walkPhase: 0,
   health: 3,
   invuln: 0,
-  airJumps: 1, coyote: 0, punchT: 0, punchHit: false, climbing: false, punchDir: new THREE.Vector3()
+  airJumps: 1, coyote: 0, punchT: 0, punchHit: false, climbing: false, punchDir: new THREE.Vector3(),
+  hasPower: false, charge: 0, punchPower: false   // power punch, found in star 2
 };
 const PUNCH_TIME = 0.38;
 const PUNCH_ARM = { x: 1.5, y: 1.0 };   // shoulder offsets for the punch pose (checked visually)
@@ -1394,8 +1406,8 @@ function updateHud() {
   if (hearts) ui.hearts.textContent = "❤️".repeat(Math.max(0, P.health)) + "🤍".repeat(3 - Math.max(0, P.health));
   if (boss) {
     ui.shards.textContent = Boss.defeated ? "⭐ Bowser defeated!" : "Bowser " + "♥".repeat(Math.max(0, Boss.hp)) + "♡".repeat(BOSS_HP - Math.max(0, Boss.hp));
-  } else if (active.def.theme === "wind") {
-    ui.shards.textContent = "💡 " + WindGardens.objective();
+  } else if (levelOf(active)) {
+    ui.shards.textContent = levelOf(active).hudText();
   } else {
     ui.shards.textContent = "⭐ " + active.collected + " / " + active.total;
   }
@@ -1412,16 +1424,20 @@ window.addEventListener("keydown", e => {
   if (TunePanel.owns(e.target)) return;           // typing in the tuning panel does not move Mario
   keys[e.code] = true;
   if (e.code === "Space") { e.preventDefault(); if (!e.repeat) jumpQueued = true; }
-  if ((e.code === "KeyJ" || e.code === "KeyF" || e.code === "KeyK") && !e.repeat) punchQueued = true;
+  if ((e.code === "KeyJ" || e.code === "KeyF" || e.code === "KeyK") && !e.repeat) { punchQueued = true; punchHeld = true; }
   if (e.code === "KeyR" && !e.repeat) resetCamera();
 });
-window.addEventListener("keyup", e => { keys[e.code] = false; });
+window.addEventListener("keyup", e => {
+  keys[e.code] = false;
+  if ((e.code === "KeyJ" || e.code === "KeyF" || e.code === "KeyK") && punchHeld) { punchHeld = false; punchReleased = true; }
+});
 
 const stick = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
 const look = { id: null, lastX: 0, lastY: 0, id2: null, x2: 0, y2: 0, pinch: 0 };
 let jumpQueued = false;
 let jumpHeld = false;
 let punchQueued = false;
+let punchHeld = false, punchReleased = false;   // power punch (star 2 on): hold to charge, release to smash
 const isTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
 if (!isTouch) document.body.classList.add("desktop");
 
@@ -1452,7 +1468,7 @@ document.addEventListener("touchstart", e => {
     if (t.target === ui.hudSound || t.target === ui.camReset) return;
     const inJump = t.target === ui.jumpBtn;
     if (inJump) { jumpQueued = true; jumpHeld = true; ui.jumpBtn.classList.add("pressed"); Audio.resume(); continue; }
-    if (t.target === ui.punchBtn) { punchQueued = true; ui.punchBtn.classList.add("pressed"); Audio.resume(); continue; }
+    if (t.target === ui.punchBtn) { punchQueued = true; punchHeld = true; ui.punchBtn.classList.add("pressed"); Audio.resume(); continue; }
     if (t.clientX < window.innerWidth * 0.5 && !stick.active) { stickStart(t.identifier, t.clientX, t.clientY); }
     else if (look.id === null) { look.id = t.identifier; look.lastX = t.clientX; look.lastY = t.clientY; }
     else if (look.id2 === null) { look.id2 = t.identifier; look.x2 = t.clientX; look.y2 = t.clientY; look.pinch = Math.hypot(look.x2 - look.lastX, look.y2 - look.lastY); }
@@ -1485,7 +1501,7 @@ function touchClear(e) {
     if (t.identifier === look.id) { look.id = look.id2; look.lastX = look.x2; look.lastY = look.y2; look.id2 = null; look.pinch = 0; }
     else if (t.identifier === look.id2) { look.id2 = null; look.pinch = 0; }
     if (t.target === ui.jumpBtn) { jumpHeld = false; ui.jumpBtn.classList.remove("pressed"); }
-    if (t.target === ui.punchBtn) ui.punchBtn.classList.remove("pressed");
+    if (t.target === ui.punchBtn) { ui.punchBtn.classList.remove("pressed"); if (punchHeld) { punchHeld = false; punchReleased = true; } }
   }
 }
 document.addEventListener("touchend", touchClear);
@@ -1532,7 +1548,7 @@ function hurtWind(away) {
   Particles.spawn(P.pos.clone().addScaledVector(up, 0.8), 0xff6a4a, 12, 3);
   if (P.health <= 0) {
     toast("Oops! Try again.", 1600);
-    WindGardens.respawn(P, wgEnv, true);
+    levelOf(active).respawn(P, wgEnv, true);
     P.invuln = 1.2;
   }
   updateHud();
@@ -1555,16 +1571,18 @@ const wgEnv = {
   P: P, t: 0, grounded: false, isTouch: isTouch,
   Audio: Audio, Particles: Particles, toast: toast, hint: hint,
   hurt: hurtWind, teleport: teleportPlayer, restoreHealth() { P.health = 3; updateHud(); }, fade: fadeFlash,
+  shake(v) { camShake = Math.max(camShake, v); }, refreshHud() { updateHud(); },
   heightOf(pl) { return pl.pos.distanceTo(active.center) - active.radius; }
 };
 function wgFrame() {
   wgEnv.t = clock.elapsedTime;
   wgEnv.grounded = P.grounded;
-  const obj = WindGardens.objective();
+  const L = levelOf(active);
+  const obj = L ? L.hudText() : "";
   if (obj !== lastObjective) { lastObjective = obj; updateHud(); }
   return wgEnv;
 }
-WindGardens.attach(wgEnv);
+for (const k in LEVELS) LEVELS[k].attach(wgEnv);
 
 // ---------- game flow ----------
 function landOnPlanet(index, dirOverride) {
@@ -1582,6 +1600,7 @@ function landOnPlanet(index, dirOverride) {
   player.position.copy(P.pos);
   orientPlayer(P.up, camDir, 1);
   Audio.setKey(active.def.key);
+  configureDay(active);
   applySky();
   player.visible = true;
   if (active.def.boss && !Boss.defeated && state !== S.MENU) bossStart(active);
@@ -1590,7 +1609,7 @@ function landOnPlanet(index, dirOverride) {
 
 // Wind Gardens runs the day and night cycle (js/day-cycle.js); every other planet and the menu keep the night sky
 function applySky() {
-  DayCycle.setEnabled(active.def.theme === "wind" && state !== S.MENU);
+  DayCycle.setEnabled(!!levelOf(active) && state !== S.MENU);
 }
 function resetGame() {
   Particles.clear();
@@ -1602,7 +1621,8 @@ function resetGame() {
   });
   transition = null;
   bossReset();
-  WindGardens.reset();
+  P.hasPower = false; P.charge = 0;
+  for (const k in LEVELS) LEVELS[k].reset();
   DayCycle.reset();                       // restart begins in the morning again
   camZoom = CAM_DEFAULT.zoom; camPitch = CAM_DEFAULT.pitch;
   P.health = 3;
@@ -1677,6 +1697,24 @@ function collectShard(s) {
   }
 }
 
+// The fist glows while a power punch charges, and pulses once it is ready.
+const chargeGlow = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10),
+  new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+chargeGlow.position.set(-0.42, 0.95, 0.45);
+player.add(chargeGlow);
+let chargeSpark = 0;
+function updateChargeGlow(dt) {
+  const k = P.hasPower ? clamp(P.charge / TUNE.power.charge, 0, 1) : 0;
+  const ready = k >= 1;
+  chargeGlow.visible = k > 0.02;
+  chargeGlow.material.opacity = 0.25 + 0.55 * k;
+  chargeGlow.scale.setScalar(0.6 + 1.1 * k + (ready ? 0.25 * Math.sin(clock.elapsedTime * 18) : 0));
+  if (ready) {
+    chargeSpark -= dt;
+    if (chargeSpark <= 0) { chargeSpark = 0.12; Particles.spawn(chargeGlow.getWorldPosition(new THREE.Vector3()), 0xffc060, 4, 1.6); }
+  }
+}
+
 // ---------- main loop ----------
 function updatePlaying(dt) {
   // camera yaw from input
@@ -1692,10 +1730,12 @@ function updatePlaying(dt) {
     active = planet;
     activeIndex = planets.indexOf(planet);
     Audio.setKey(active.def.key);
+    configureDay(active);
+    applySky();
     updateHud();
   }
 
-  const wg = active.def.theme === "wind" ? WindGardens : null;
+  const wg = levelOf(active);
   if (wg) DayCycle.update(dt);         // only while playing, so pausing pauses the day
   if (wg && !wg.isLocked()) {          // on the balcony, swing the camera to the side of the blades
     const hintDir = camYawIdle > 2 ? wg.cameraHint(P) : null;
@@ -1738,7 +1778,7 @@ function updatePlaying(dt) {
 
   // punch: a short lunge, the hit lands partway through the swing
   if (punchQueued && P.punchT <= 0) {
-    P.punchT = PUNCH_TIME; P.punchHit = false;
+    P.punchT = PUNCH_TIME; P.punchHit = false; P.punchPower = false;
     P.punchDir.copy(projectTangent(moving ? moveDir : (P.face.lengthSq() ? P.face : camDir), up));
     if (wg) P.punchDir.copy(wg.aim(P, P.punchDir, up));
     P.face.copy(P.punchDir);
@@ -1746,6 +1786,21 @@ function updatePlaying(dt) {
     Audio.noise(0.1, 0.14);
   }
   punchQueued = false;
+  // power punch: once the glove is found (star 2), holding Punch charges and letting go smashes
+  if (P.hasPower && punchHeld) P.charge += dt;
+  if (punchReleased) {
+    if (P.hasPower && P.charge >= TUNE.power.charge) {
+      P.punchT = PUNCH_TIME; P.punchHit = false; P.punchPower = true;
+      P.punchDir.copy(projectTangent(moving ? moveDir : (P.face.lengthSq() ? P.face : camDir), up));
+      if (wg) P.punchDir.copy(wg.aim(P, P.punchDir, up));
+      P.face.copy(P.punchDir);
+      vTan.addScaledVector(P.punchDir, 6);
+      Audio.tone(140, 0.3, "sawtooth", 0.16, 60); Audio.noise(0.2, 0.2);
+      Particles.spawn(P.pos.clone().addScaledVector(up, 1).addScaledVector(P.punchDir, 0.8), 0xffa040, 16, 4);
+    }
+    P.charge = 0; punchReleased = false;
+  }
+  updateChargeGlow(dt);
 
   // jump, with a second jump in the air that comes back on landing
   P.coyote = P.grounded ? 0.1 : Math.max(0, P.coyote - dt);
@@ -1969,7 +2024,8 @@ function updatePlaying(dt) {
 // Wind Gardens answers from its real terrain (trench, canyon, planks, pedestal, balcony);
 // the other planets are plain spheres.
 function camFloorAt(pos) {
-  if (active.def.theme === "wind") return WindGardens.cameraFloor(pos);
+  const L = levelOf(active);
+  if (L) return L.cameraFloor(pos);
   return { floor: 0, h: pos.distanceTo(active.center) - active.radius };
 }
 // Fraction (0..1] of the segment a->b that is free of ground. Samples the segment and stops
@@ -1994,9 +2050,10 @@ function camPullIn(target, want, margin) {
   dirv.divideScalar(len);
   let free = len * camClearFraction(target, want, margin);
   if (free < len) blocked = true;
-  if (active.def.theme === "wind") {
+  const L = levelOf(active);
+  if (L && L.colliders.length) {
     camRay.set(target, dirv); camRay.far = len;
-    const hits = camRay.intersectObjects(WindGardens.colliders, true);
+    const hits = camRay.intersectObjects(L.colliders, true);
     if (hits.length && hits[0].distance - 0.8 < free) { free = hits[0].distance - 0.8; blocked = true; }
   }
   if (blocked) want.copy(target).addScaledVector(dirv, Math.max(CAM_MIN_DIST, free));
@@ -2021,7 +2078,7 @@ function updateCameraFollow(dt, extra) {
   camLookAhead += ((P.grounded || state !== S.PLAYING ? 0 : TUNE.camera.lookAhead) - camLookAhead) * Math.min(1, dt * 3);
   const target = P.pos.clone().addScaledVector(up, 1.0);
   // soft framing near the brake lever: back off and aim partly at the mill (WindGardens.cameraFocus)
-  const focus = (active.def.theme === "wind" && state === S.PLAYING) ? WindGardens.cameraFocus(P) : null;
+  const focus = (levelOf(active) && state === S.PLAYING) ? levelOf(active).cameraFocus(P) : null;
   camFocusW += ((focus ? focus.weight : 0) - camFocusW) * Math.min(1, dt * 1.8);
   if (focus) camFocusPt.copy(focus.point);
   const fe = camFocusW * camFocusW * (3 - 2 * camFocusW);
@@ -2052,7 +2109,7 @@ function updateCameraFollow(dt, extra) {
   camPullIn(target, camFollow, 0.3);
 
   // fixed shots for the mill climb and the rescue, with a smooth hand-back to the player
-  const shot = (active.def.theme === "wind" && state === S.PLAYING) ? WindGardens.cameraShot(P) : null;
+  const shot = (levelOf(active) && state === S.PLAYING) ? levelOf(active).cameraShot(P) : null;
   if (shot) { camShotPos.copy(shot.pos); camShotLook.copy(shot.look); camShotKind = shot.kind; }
   else if (camShotKind) {
     // hand back from where the camera is now, so the follow camera does not swing around
@@ -2164,6 +2221,7 @@ function animate() {
   else if (state === S.VICTORY) updateCameraFollow(dt, 9);
 
   Particles.update(dt);
+  Models.update(dt);
   Audio.update();
   starfield.position.copy(camera.position);
   updatePlanetDetail();
@@ -2190,11 +2248,11 @@ const heroShadow = (() => {
 })();
 const _hsUp = new THREE.Vector3(), _hsQ = new THREE.Quaternion(), _hsZ = new THREE.Vector3(0, 0, 1);
 function updateHeroShadow() {
-  const show = state === S.PLAYING && active && active.def.theme === "wind" && player.visible && !P.climbing;
+  const show = state === S.PLAYING && levelOf(active) && player.visible && !P.climbing;
   heroShadow.visible = !!show;
   if (!show) return;
   _hsUp.copy(P.pos).sub(active.center);
-  const f = WindGardens.cameraFloor(P.pos);
+  const f = levelOf(active).cameraFloor(P.pos);
   const above = f.h - f.floor;
   if (!isFinite(f.floor) || above > 14) { heroShadow.visible = false; return; }
   _hsUp.normalize();
@@ -2219,7 +2277,7 @@ function heroNightGlow() {
     }); });
   }
   const night = (GameShared.sky && GameShared.sky.night) || 0;
-  const k = active.def.theme === "wind" ? 0.28 * night : 0;
+  const k = levelOf(active) ? 0.28 * night : 0;
   for (const m of heroMats) m.emissiveIntensity = k;
 }
 
@@ -2248,14 +2306,18 @@ landOnPlanet(0);
 state = S.MENU;
 // test/QA access (see docs/wind-gardens.md)
 let dbgPause = false;
-window.__dbg = { P, camera, camDir, WindGardens, QUALITY, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },
+window.__dbg = { P, camera, camDir, WindGardens, BasaltMines, QUALITY, Models, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },
   get ready() { return !!player.userData.ready; },
   // place the hero at route coordinates (s, l, height above the base sphere), facing +s
   place(s, l, h, back) {
-    const wp = WindGardens.debug.worldPos(s, l || 0, h || 0);
-    teleportPlayer(wp, WindGardens.debug.worldPos(s + (back ? -5 : 5), l || 0, h || 0).sub(wp));
+    const L = levelOf(active) || WindGardens;
+    const wp = L.debug.worldPos(s, l || 0, h || 0);
+    teleportPlayer(wp, L.debug.worldPos(s + (back ? -5 : 5), l || 0, h || 0).sub(wp));
     P.grounded = false;
   },
+  // land on a planet by index (QA: start a test on star 2 without the launch)
+  goTo(i) { transition = null; landOnPlanet(i); state = S.PLAYING; },
+  powerPunch() { P.charge = TUNE.power.charge + 0.01; punchReleased = true; },
   get health() { return P.health; }, set health(v) { P.health = v; },
   setInvuln(v) { P.invuln = v; },
   setCam(pitch, zoom) { if (pitch !== undefined) camPitch = pitch; if (zoom !== undefined) camZoom = zoom; },

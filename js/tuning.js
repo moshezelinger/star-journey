@@ -42,6 +42,20 @@ const TUNE_DEFAULTS = {
     pitchMin: 0.1, pitchMax: 1.15,
     lookAhead: 3.5     // how far ahead the camera looks while Mario is in the air
   },
+  power: {
+    charge: 0.5        // seconds the punch button is held to charge a power punch (star 2 on)
+  },
+  beetle: {
+    sightRange: 14,    // basalt beetle starts its warning when the hero is this close
+    warnTime: 0.8,     // seconds of warning before it charges
+    chargeTime: 1.5,   // seconds it runs in a straight line
+    chargeSpeed: 10,   // units/s while charging
+    stuckTime: 2.6     // seconds it stays stuck in the rock after a charge (the moment to power punch)
+  },
+  rocks: {
+    interval: 3.0,     // seconds between two stones from one monkey
+    speed: 7.5         // units/s a stone rolls down the mine track
+  },
   day: {
     length: 300,       // seconds for a full day and night (5 minutes)
     startPhase: 0.0,   // fraction of a full cycle to skip at the start (0 = morning)
@@ -64,9 +78,9 @@ const TUNE = (() => {
 
 /* Visual effects that can be switched off one by one, to measure what each costs:
    index.html?fx=-canyon,-islands   (a leading minus turns that effect off).
-   Names: day, canyon, windmill, markers, islands, stones, path, shadows, sky, merge. */
+   Names: day, canyon, windmill, markers, islands, stones, path, shadows, sky, merge, jungle (star 2 trees and ferns). */
 const FX = (() => {
-  const fx = { day: true, canyon: true, windmill: true, markers: true, islands: true, stones: true, path: true, shadows: true, sky: true, merge: true };
+  const fx = { day: true, canyon: true, windmill: true, markers: true, islands: true, stones: true, path: true, shadows: true, sky: true, merge: true, jungle: true };
   try {
     const m = /[?&]fx=([^&]*)/.exec(location.search);
     if (m) decodeURIComponent(m[1]).split(",").forEach(k => { k = k.trim(); if (k[0] === "-" && k.slice(1) in fx) fx[k.slice(1)] = false; });

@@ -1,15 +1,15 @@
 # מסע בין כוכבים
 # Star Journey: Following the Lantern's Light
 
-A browser platformer on small round planets, built with Three.js and no build step. Star 1, **Wind Gardens**, is playable end to end: spot the brother's lantern, learn to punch and double jump, cross a broken bridge in changing wind, and stop a windmill to rescue him.
+A browser platformer on small round planets, built with Three.js and no build step. Star 1, **Wind Gardens**, is playable end to end: spot the brother's lantern, learn to punch and double jump, cross a broken bridge in changing wind, and stop a windmill to rescue him. Star 2, **Basalt Mines**, is playable end to end too: find the power glove, learn what to break, climb a mine track under rolling stones, and send a cart of beams to the friend knocking inside the mountain.
 
 - **Play online:** [moshezelinger.github.io/star-journey](https://moshezelinger.github.io/star-journey/)
 - **Play locally:** `python3 -m http.server 8765`, then open `http://localhost:8765/`. Keys: WASD, Space (again in the air), J or F to punch, R to reset the camera.
 - **Build diary with screenshots:** [docs/showcase](docs/showcase/README.md)
-- **Technical notes:** [docs/wind-gardens.md](docs/wind-gardens.md)
+- **Technical notes:** [docs/wind-gardens.md](docs/wind-gardens.md), [docs/basalt-mines.md](docs/basalt-mines.md)
 - **Story and the four stars:** [game-design/four-planets.md](game-design/four-planets.md) (Hebrew)
 
-Status: prototype. Graphics are placeholder primitives, and the level has not yet been tested on a real touch device or with a child.
+Status: prototype. Characters other than the hero and Bowser are simple stand-ins until their models are installed (`js/models.js`), and the level has not yet been tested on a real touch device or with a child.
 
 ---
 

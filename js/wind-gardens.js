@@ -358,6 +358,16 @@ const WindGardens = (() => {
     return g;
   }
 
+  // Characters are GLB/glTF models (js/models.js, CLAUDE.md). The parts built in code below are
+  // the stand-in: they show until the model has loaded, and stay when it is not installed.
+  // keep: parts that stay visible with the model too (Luigi's lantern).
+  function withModel(id, parent, keep, opts) {
+    const stand = new THREE.Group(); stand.name = "stand-in";
+    for (const c of parent.children.slice()) if (!keep.includes(c)) stand.add(c);
+    parent.add(stand);
+    return Models.load(id, parent, stand, opts);
+  }
+
   // Enemies, second pass (issue #5): rounder, smooth-shaded original creatures. The returned
   // parts (g, body, bang / wings) and their sizes are the ones the behaviour code animates.
   const smoothMat = new Map();
@@ -1071,6 +1081,7 @@ const WindGardens = (() => {
 
     // Luigi on the balcony + lantern beam
     luigi = makeLuigi();
+    luigi.model = withModel("luigi", luigi.g, [luigi.lantern], { height: Models.REGISTRY.luigi.height / 1.15 });
     group.add(put(luigi.g, LUIGI_SPOT.s, LUIGI_SPOT.l, bal.top));
     luigi.base = luigi.g.quaternion.clone();
     beam = H.makeBeam(0xfff0b0, 90);
@@ -1084,7 +1095,9 @@ const WindGardens = (() => {
 
     // ---------- enemies ----------
     goomba = makeGoomba(); group.add(goomba.g);
+    goomba.model = withModel("goomba", goomba.body, []);
     koopa = makeKoopa(); group.add(koopa.g); group.add(koopa.shadow);
+    koopa.model = withModel("paratroopa", koopa.body, []);
 
     if (FX.merge) S.mergeInfo = mergeStatic([crateMesh, bladeRoot, lever.g, luigi.g, cart, goomba.g, koopa.g, koopa.shadow, tower, roof, balG, pedMesh, beam]);
 
@@ -1638,6 +1651,9 @@ const WindGardens = (() => {
     return null;
   }
 
+  function wantsSmooth() { return FX.path && FX.canyon; }
+  function dayAxis() { const a = dirAt(70, 0), b = dirAt(71, 0); return { up: a, forward: b.sub(a) }; }   // the sun turns over s = 70
+  function hudText() { return "💡 " + objective(); }
   function objective() {
     if (S.rescued) return S.rescueT > 5.4 ? "Luigi is safe! Enter the gate" : "Luigi is safe!";
     if (S.climbReady) return "Climb the ladder to Luigi";
@@ -1666,7 +1682,7 @@ const WindGardens = (() => {
   function attach(e) { env = e; reset(); }
 
   return {
-    configure, shapeGround, smoothGround, exitDir, build, attach, reset, update, query, drift, constrain,
+    configure, shapeGround, smoothGround, wantsSmooth, dayAxis, hudText, exitDir, build, attach, reset, update, query, drift, constrain,
     punchHit, aim, scripted, objective, debug, colliders, cameraHint, cameraFloor, cameraShot, cameraFocus,
     respawn: (P, hooks, restoreHealth) => respawn(P, hooks, restoreHealth),
     isLocked: () => S.locked,
