@@ -5,7 +5,7 @@ A browser platformer on small round planets, built with Three.js and no build st
 
 - **Play online:** [moshezelinger.github.io/star-journey](https://moshezelinger.github.io/star-journey/)
 - **Play locally:** `python3 -m http.server 8765`, then open `http://localhost:8765/`. Keys: WASD, Space (again in the air), J or F to punch, R to reset the camera.
-- **Build diary with screenshots:** [docs/showcase](docs/showcase/README.md)
+- **Build portfolio with screenshots, per level:** [docs/showcase](docs/showcase/README.md) (Wind Gardens: [docs/showcase/wind-gardens](docs/showcase/wind-gardens/README.md))
 - **Technical notes:** [docs/wind-gardens.md](docs/wind-gardens.md)
 - **Story and the four stars:** [game-design/four-planets.md](game-design/four-planets.md) (Hebrew)
 
@@ -23,7 +23,7 @@ Status: prototype. Graphics are placeholder primitives, and the level has not ye
 
 ## תיעוד תהליך הבנייה
 
-צילומי מסך והסברים קצרים על בניית שלב גני הרוח: [docs/showcase](docs/showcase/README.md).
+תיק עבודות לכל שלב, בצילומי מסך והסברים קצרים: [docs/showcase](docs/showcase/README.md). גני הרוח: [docs/showcase/wind-gardens](docs/showcase/wind-gardens/README.md).
 
 ## איך לשחק / How to play
 

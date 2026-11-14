@@ -5,3 +5,4 @@
 - Before each commit run `node tools/route-check.js`, `day-check.js`, `touch-check.js`, `camera-check.js` (run `npm install` in `tools/` once). For visual changes also `node tools/frames.js`, and record draw calls and triangles before and after.
 - Work on a branch, never merge to `main` without Moshe playing it. Report progress on the GitHub issues using the follow-up record format in issue #1, in Hebrew.
 - New characters and enemies are original designs for this game.
+- **Build portfolio rule: `docs/showcase/README.md`.** A level is not finished, and not merged to `main` as finished, until `docs/showcase/<level>/README.md` tells its build in screenshots (Hebrew then English, chapters in order of play, before and after for visual changes). After a major pass on an existing level, add a chapter. Capture with `node tools/showcase.js <level>` from that level's `shots.json`; save "before" pictures as `img/before-*.jpg` before changing anything.
