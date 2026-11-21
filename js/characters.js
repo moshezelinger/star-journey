@@ -306,8 +306,8 @@ const Characters = (() => {
     W.arms.forEach((A, i) => {
       if (!A) return;
       let x = (i ? s : -s) * 0.9, z = 0;
-      if (air) { x = -0.6; z = (i ? 1 : -1) * -0.9; }
-      if (i === 1 && punch > 0) { x = -1.55 * punch; z = 0.25 * punch; }
+      if (air) { x = -0.6; z = (i ? 1 : -1) * 0.9; }              // +z lifts the right arm outward, -z the left
+      if (i === 1 && punch > 0) { x = -1.55 * punch; z = -0.12 * punch; }
       A.rotation.x += (x - A.rotation.x) * Math.min(1, dt * 16);
       A.rotation.z += (z + (A.userData.restZ || 0) - A.rotation.z) * Math.min(1, dt * 16);
     });
@@ -1012,6 +1012,7 @@ const Characters = (() => {
   return {
     update, drive, part, eyes,
     brother, mushroomWalker, wingedTurtle, basaltBeetle, mineMonkey, youngVillain, inkSquid, bigApe, dinosaur, mushroomFriend, swampSnapper,
-    get count() { return live.length; }
+    get count() { return live.length; },
+    rigs: () => live            // QA: the animation state of every character
   };
 })();
