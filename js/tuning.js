@@ -49,6 +49,11 @@ const TUNE_DEFAULTS = {
     time: 1.0,         // star 3: seconds the dinosaur can hover while jump is held
     lift: 0.9          // share of gravity the flutter cancels (1 = floats level)
   },
+  dash: {
+    speed: 20,         // star 4: forward speed of the dash (third press of jump in the air), units/s
+    time: 0.45,        // seconds the dash keeps its speed before air control returns
+    lift: 3            // small upward push at the start of the dash, units/s
+  },
   beetle: {
     sightRange: 14,    // basalt beetle starts its warning when the hero is this close
     warnTime: 0.8,     // seconds of warning before it charges
@@ -82,7 +87,7 @@ const TUNE = (() => {
 
 /* Visual effects that can be switched off one by one, to measure what each costs:
    index.html?fx=-canyon,-islands   (a leading minus turns that effect off).
-   Names: day, canyon, windmill, markers, islands, stones, path, shadows, sky, merge, jungle (star 2 trees and ferns). */
+   Names: day, canyon, windmill, markers, islands, stones, path, shadows, sky, merge, jungle (star 2 trees and ferns, star 3 trees, star 4 rocks), islands (star 1 islands, star 4 volcanoes and citadel). */
 const FX = (() => {
   const fx = { day: true, canyon: true, windmill: true, markers: true, islands: true, stones: true, path: true, shadows: true, sky: true, merge: true, jungle: true };
   try {

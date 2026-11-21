@@ -40,7 +40,7 @@ const H = require("./harness");
 
   // the quick jump between the stars (menu row, tuning panel, Shift+1..4)
   r = await ev(() => { const out = []; for (const i of [3, 0, 1, 2]) { window.goToStar(i); out.push({ i, planet: window.__dbg.active.name, state: window.__dbg.state, painted: window.__dbg.painted, power: window.__dbg.P.hasPower }); } return out; });
-  c.ok("goToStar lands on each star in the right state", r.every((x, k) => x.state === "PLAYING") && r[0].planet.startsWith("Bowser") && r[2].planet === "Basalt Mines" && r[3].planet === "Ink Swamp" && r[3].painted && r[3].power, r);
+  c.ok("goToStar lands on each star in the right state", r.every((x, k) => x.state === "PLAYING") && r[0].planet === "Furnace Moon" && r[2].planet === "Basalt Mines" && r[3].planet === "Ink Swamp" && r[3].painted && r[3].power, r);
 
   r = await ev(() => {
     const d = window.__dbg; d.goTo(2); d.step(30);

@@ -17,6 +17,7 @@
    height: standing height in world units (the hero is 1.55).
    yaw: turn in radians so the model faces local +Z (the game's "front").
    clip: animation clip to loop (name, or index), when the file has one.
+   strip: optional regex; meshes whose material name matches are dropped before measuring.
    ============================================================ */
 const Models = (() => {
   const REGISTRY = {
@@ -77,6 +78,12 @@ const Models = (() => {
       url: "https://sketchfab.com/3d-models/mario-movie-super-mario-movie-13d05e3c76a148568decf1e8f25888f8",
       license: "CC-BY-4.0", path: "mario_movie_super_mario_movie.glb", height: 1.55, yaw: 0, clip: 0, ready: true
     },
+    // ---- star 4, the Furnace Moon ----
+    bowser: {
+      title: "Bowser Super Mario Bros.1", author: "Vandacvi", authorUrl: "https://sketchfab.com/Vandacvi",
+      url: "https://sketchfab.com/3d-models/bowser-super-mario-bros1-d02c1fa828364677b890ea8b2d408b97",
+      license: "CC-BY-4.0", path: "assets/bowser/scene.gltf", strip: "mssbMtl", height: 4.0, yaw: 0, clip: 0, ready: true
+    },
     bowserjr: {
       title: "Bowser Jr. (Mario Kart 8 Deluxe)", author: "Austin Zimmermann", authorUrl: "https://sketchfab.com/AustinZimmermann",
       url: "https://sketchfab.com/3d-models/bowser-jr-mario-kart-8-deluxe-8fd1397374a04d499ab4bd5bf90ffeac",
@@ -119,6 +126,11 @@ const Models = (() => {
     if (!spec || !spec.ready || typeof THREE.GLTFLoader !== "function") return h;
     new THREE.GLTFLoader().load(spec.path || ("assets/" + id + "/" + (spec.file || "scene.gltf")), (gltf) => {
       const model = gltf.scene;
+      if (spec.strip) {                        // a stray helper mesh far from the character (the Bowser file has one)
+        const re = new RegExp(spec.strip), gone = [];
+        model.traverse(m => { if (m.isMesh && m.material && re.test(m.material.name || "")) gone.push(m); });
+        gone.forEach(m => m.parent.remove(m));
+      }
       model.traverse(m => {
         if (!m.isMesh) return;
         m.castShadow = true;
