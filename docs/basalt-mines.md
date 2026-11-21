@@ -42,32 +42,11 @@ Coins carry across the stars in `P.coins` (shown in the HUD). In the story they 
 
 The young villain does not hit the hero at the pad; he hits him during the flight to the next star (`updateAmbush` in `index.html`). He appears beside the hero at a quarter of the flight, throws a paint blob at 42%, and leaves. `P.painted` stays on until a new game, and the hero glows purple (an emissive tint, no extra light). Star 3 (the Ink Swamp) starts from this state.
 
-## Characters (GLB/glTF models)
+## Characters
 
-Characters are ready-made models in the Nintendo style (CLAUDE.md). The registry is `js/models.js`. Each model was checked on its Sketchfab page: CC-BY 4.0, downloadable, under 30 thousand triangles. Until a model's files are in `assets/<id>/`, the game shows a simple stand-in built in code (and never requests the missing file).
+Built in code in `js/characters.js` (`docs/characters.md`), as original designs: the brother with a lit lantern, the big ape in a hard hat holding the beam with both arms up, the basalt beetle (a dome of basalt columns, a front shield with a horn, glowing eyes, six legs; the glowing cracks on its back use the level's `crackMat`, and stars circle it while it is stuck), the mine monkeys in miner's helmets holding a stone overhead, and the young villain (a small imp in a beret and a paint-splashed apron, with the brush).
 
-**Installed:** `dk`, "Donkey Kong 64" by chicosantossaraiva (CC-BY 4.0, 704 triangles, 64KB). Its source page and licence were checked on Sketchfab; the files came from a public copy on GitHub (with the original `license.txt`), because Sketchfab downloads need a sign-in.
-
-**Not installed yet** (stand-ins until then):
-
-| id | Role | Model | Author |
-|---|---|---|---|
-| `luigi` | Luigi (star 1 balcony, star 2 switch) | [Luigi (Super Mario Bros)](https://sketchfab.com/3d-models/luigi-super-mario-bros-a79c8ef8419448c39f61fc32b2b19e7c) | Yanez Designs |
-| `goomba` | Goomba (star 1) | [Animated Goomba (Super Mario Bros)](https://sketchfab.com/3d-models/animated-goomba-super-mario-bros-3c91cc4ac8144d82a05309679a3dbbd5) | Yanez Designs |
-| `paratroopa` | Winged koopa (star 1) | [Mario Kart 8 - Koopa Paratroopa](https://sketchfab.com/3d-models/mario-kart-8-koopa-paratroopa-2147c4e5ff5f43a89c3a07c5011c4295) | taej11503 |
-| `buzzy` | Basalt beetle | [Buzzy Beetle (Super Mario Bros)](https://sketchfab.com/3d-models/buzzy-beetle-super-mario-bros-8d3d39516f7b40d5aa19e85226940899) | Yanez Designs |
-| `ukiki` | Monkeys on the beams | [Ukiki](https://sketchfab.com/3d-models/ukiki-c71d5ac4570a46b69fc3bfa7b3e4a30e) | tirrellclark.75 |
-| `bowserjr` | The young villain | [Bowser Jr. (Mario Kart 8 Deluxe)](https://sketchfab.com/3d-models/bowser-jr-mario-kart-8-deluxe-8fd1397374a04d499ab4bd5bf90ffeac) | Austin Zimmermann |
-
-Tried and rejected: a "Luigi" (LukeMcQueen02) found on GitHub is Luigi from Pixar's Cars, not the Nintendo character; another Luigi (WeirdBrain) has 63 thousand triangles; a CC-BY Goomba (ValentinDebels) has 52 thousand triangles, which would push star 1 over its 350 thousand budget; another Goomba is under the Sketchfab Standard licence, which is not allowed here.
-
-To install one: open its page, sign in to Sketchfab (free), Download 3D Model, choose **glTF**, then run
-
-```
-node tools/add-model.js dk ~/Downloads/donkey-kong-mario-kart-8-deluxe.zip
-```
-
-The script unpacks it into `assets/dk/`, keeps the licence file, adds the credit to `README.md` and sets `ready: true` in `js/models.js`. The game then scales it to the height in the registry, puts its feet on the ground and plays its first animation clip. If it faces the wrong way, change `yaw` in `js/models.js`. Moving parts that belong to the stand-ins (DK's raised arms, Luigi's waving arm) do not move a static model; that needs the model's own clips (issue #16).
+The big ape still shows the installed `dk` model by default ("Donkey Kong 64" by chicosantossaraiva, CC-BY 4.0); `?models=code` shows the code version. The other slots in `js/models.js` (`luigi`, `goomba`, `paratroopa`, `buzzy`, `ukiki`, `bowserjr`) are not installed, so the code characters show.
 
 ## Level table (`index.html`)
 
@@ -95,7 +74,7 @@ The ground is one fine strip (0.6 units along the route, finer near it across) s
 
 ## What was verified, and how
 
-Headless Chromium with software rendering only. Frame rate and load time were not measured, touch was not tried on star 2, and no child has played it. DK is the only character model installed; the rest are stand-ins.
+Headless Chromium with software rendering only. Frame rate and load time were not measured, touch was not tried on star 2, and no child has played it. DK is the only character model installed; the rest are built in code.
 
 ## Open questions for Moshe
 

@@ -1,0 +1,98 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Characters lineup</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #bfe3ff; overflow: hidden; font-family: system-ui, sans-serif; }
+  #labels div { position: absolute; transform: translateX(-50%); font-size: 13px; font-weight: 600; color: #1b2a3a; text-align: center; white-space: nowrap; }
+  #labels small { display: block; font-weight: 400; color: #3a4a5a; }
+</style></head>
+<body>
+<div id="labels"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../js/characters.js"></script>
+<script>
+// All characters built in code, side by side (node tools/lineup.js takes the picture).
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xbfe3ff);
+scene.add(new THREE.HemisphereLight(0xeaf4ff, 0x7a9a5a, 0.75));
+const sun = new THREE.DirectionalLight(0xfff2dd, 0.95);
+sun.position.set(-6, 14, 12); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -20, right: 20, top: 12, bottom: -12, near: 1, far: 60 });
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 40), new THREE.MeshStandardMaterial({ color: 0x8fcf6e, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const crackMat = new THREE.MeshStandardMaterial({ color: 0xff8a30, emissive: 0xff6010, emissiveIntensity: 0.9 });
+
+const q = new URLSearchParams(location.search);
+const ROWS = [
+  [["brother", "האח", "כוכבים 1 עד 3", () => Characters.brother({ height: 1.9 }).g],
+   ["mushroomWalker", "הלך הפטרייה", "כוכב 1", () => Characters.mushroomWalker().g],
+   ["wingedTurtle", "הצב המכונף", "כוכב 1", () => Characters.wingedTurtle().g],
+   ["basaltBeetle", "חיפושית הבזלת", "כוכב 2", () => Characters.basaltBeetle({ crackMat }).g],
+   ["mineMonkey", "קוף המכרה", "כוכב 2", () => Characters.mineMonkey().g],
+   ["youngVillain", "הנבל הצעיר", "כוכב 2", () => Characters.youngVillain().g]],
+  [["bigApe", "הקוף הגדול", "כוכב 2", () => Characters.bigApe().g],
+   ["dinosaur", "הדינוזאור", "כוכב 3", () => Characters.dinosaur().g],
+   ["rider", "האח רוכב", "כוכב 3", () => { const g = new THREE.Group(); g.add(Characters.dinosaur().g); const seat = new THREE.Group(); seat.position.set(0, 0.95, -0.35); seat.scale.setScalar(0.82); seat.add(Characters.brother({ height: 1.8, lantern: false, sit: true }).g); g.add(seat); return g; }],
+   ["mushroomFriend", "חבר הפטריות", "כוכב 3", () => Characters.mushroomFriend().g],
+   ["inkSquid", "דיונון הדיו", "כוכב 3", () => Characters.inkSquid().g],
+   ["swampSnapper", "צמח הביצה", "כוכב 3", () => Characters.swampSnapper().g]]
+];
+const only = q.get("only");
+const items = [];
+const rows = only ? [ROWS.flat().filter(r => r[0] === only)] : ROWS;
+rows.forEach((row, r) => {
+  const gap = row.length > 1 ? (rows.length > 1 && rows.indexOf(row) === 0 ? 2.75 : 3.1) : 0;
+  row.forEach(([id, name, star, make], i) => {
+    const g = make();
+    g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    g.position.set((i - (row.length - 1) / 2) * gap + (id === "bigApe" ? -0.3 : 0), 0, 0);
+    g.rotation.y = q.has("side") ? Math.PI / 2 : (q.has("back") ? Math.PI : (only ? -0.35 : -0.25));
+    scene.add(g);
+    g.updateMatrixWorld(true);
+    const top = new THREE.Box3().setFromObject(g).max.y;
+    items.push({ g, name, star, r, top: Math.min(top, id === "bigApe" ? 3.4 : top) });
+  });
+});
+const camera = new THREE.PerspectiveCamera(only ? 30 : 34, innerWidth / innerHeight, 0.1, 200);
+if (only) {               // frame the one character by its bounding box
+  const b = new THREE.Box3().setFromObject(items[0].g), c = b.getCenter(new THREE.Vector3()), h = Math.max(b.max.y - b.min.y, (b.max.x - b.min.x) * 0.9);
+  const d = h / (2 * Math.tan(15 * Math.PI / 180)) * 1.25;
+  camera.position.set(c.x, c.y + h * 0.15, c.z + d); camera.lookAt(c);
+}
+else { camera.fov = 30; camera.position.set(0, 2.4, 13.5); camera.lookAt(0, 1.35, 0); }
+const labels = document.getElementById("labels");
+for (const it of items) {
+  const d = document.createElement("div");
+  d.innerHTML = it.name + "<small>" + it.star + "</small>";
+  labels.appendChild(d); it.el = d;
+}
+const clock = new THREE.Clock();
+// each row gets its own strip of the window (one camera, the other row hidden)
+function frame() {
+  requestAnimationFrame(frame);
+  Characters.update(Math.min(clock.getDelta(), 0.05));
+  const W = innerWidth, Hh = innerHeight / rows.length;
+  renderer.setScissorTest(true);
+  rows.forEach((row, r) => {
+    for (const it of items) it.g.visible = it.r === r;
+    renderer.setViewport(0, (rows.length - 1 - r) * Hh, W, Hh); renderer.setScissor(0, (rows.length - 1 - r) * Hh, W, Hh);
+    camera.aspect = W / Hh; camera.updateProjectionMatrix();
+    if (!only) { const d = r ? 13 : 9.6, ly = r ? 1.45 : 1.05; camera.position.set(0, ly + 1.1, d); camera.lookAt(0, ly, 0); }
+    renderer.render(scene, camera);
+    for (const it of items) if (it.r === r) {
+      const p = it.g.position.clone(); p.y = -0.1; p.z += 0.6; p.project(camera);
+      it.el.style.left = ((p.x + 1) / 2 * W) + "px"; it.el.style.top = (r * Hh + (1 - p.y) / 2 * Hh) + "px";
+      it.el.style.display = only ? "none" : "";
+    }
+  });
+}
+frame();
+window.__ready = true;
+</script>
+</body></html>
