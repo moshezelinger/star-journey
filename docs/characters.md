@@ -10,7 +10,7 @@ Moshe's decision (21.11.2026): the characters are improved with what the game al
 
 | Character | Builder | Where | Look | Parts the level moves |
 |---|---|---|---|---|
-| The brother | `brother({ height, lantern, lit, sit })` | stars 1 to 3 (on star 3 he is the player) | tall and lanky, knitted green beanie with a pompom, green jacket over a cream shirt, orange scarf, satchel, teal trousers, laced boots, a lantern in his left hand | `g`, `armR` / `armL` (shoulder: waving, the lever), `lantern`, `bulb`, `glass` |
+| The brother | `brother({ height, lantern, lit, sit })` | stars 1 to 3 (on star 3 he is the player) | tall and lanky, knitted green beanie with a pompom, a brown mustache with curled tips, green jacket over a cream shirt, orange scarf, satchel, teal trousers, laced boots, a lantern in his left hand | `g`, `armR` / `armL` (shoulder: waving, the lever), `lantern`, `bulb`, `glass` |
 | Mushroom walker | `mushroomWalker()` | star 1 | rust cap shading darker toward the rim, cream spots, a leaf sprout, amber eyes, grumpy brows, waddling feet | `g`, `body`, `bang` |
 | Winged turtle | `wingedTurtle()` | star 1 | glossy shell with raised plates and a cream rim, aviator goggles, two-part beak, wings that fan out to the side; stars over its head while dazed | `g`, `body`, `wings[].w`, `shadow`, `ring`, `dazed` |
 | Basalt beetle | `basaltBeetle({ crackMat })` | star 2 | a dome of basalt columns (hexagon pattern), a front shield with a horn, glowing eyes, six legs in two tripods; stars while it is stuck | `g`, `body`, `back` (the glowing cracks), `dazed` |
@@ -40,9 +40,9 @@ Measured with `node tools/char-frames.js` (headless, software rendering; the num
 
 | Character | Own draw calls, before → after | Own triangles, before → after | Frame triangles, before → after |
 |---|---|---|---|
-| Brother, star 1 (balcony) | 16 → 13 | 1,000 → 6,176 | 338k → 343k |
-| Brother, star 2 | 8 → 12 | 380 → 5,924 | 188k → 188k |
-| Brother, star 3 (the player) | 5 → 9 | 276 → 5,480 | 293k → 298k |
+| Brother, star 1 (balcony) | 16 → 13 | 1,000 → 6,716 | 338k → 344k |
+| Brother, star 2 | 8 → 12 | 380 → 6,464 | 188k → 188k |
+| Brother, star 3 (the player) | 5 → 9 | 276 → 6,020 | 293k → 298k |
 | Mushroom walker | 22 → 5 | 2,760 → 3,594 | 309k → 317k |
 | Winged turtle | 29 → 9 | 3,586 → 5,516 | 306k → 313k |
 | Basalt beetle | 16 → 7 | 1,104 → 3,200 | 206k → 206k |
@@ -52,6 +52,6 @@ Measured with `node tools/char-frames.js` (headless, software rendering; the num
 
 With `?models=code` (installed model → code version): big ape 1 → 7 draw calls and 704 → 8,700 triangles, dinosaur 2 → 7 and 687 → 6,574, mushroom friend 1 → 3 and 14,458 → 3,654, swamp plant 15 → 5 and 794 → 4,378.
 
-The busiest frame is still the balcony on star 1 at 343 thousand triangles and 170 draw calls. Draw calls went down for most characters; triangles went up by 2 to 5 thousand per character, which buys the round shapes and the faces. Frame rate on a real phone has not been measured.
+The brother's mustache (22.11.2026) added about 540 triangles and no draw call. The busiest frame is still the balcony on star 1 at 344 thousand triangles and 170 draw calls. Draw calls went down for most characters; triangles went up by 2 to 5 thousand per character, which buys the round shapes and the faces. Frame rate on a real phone has not been measured.
 
 The frame budget is 350 draw calls and 350 thousand triangles (`docs/performance-rules.md`).

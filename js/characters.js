@@ -322,8 +322,9 @@ const Characters = (() => {
   }
 
   // ============================================================
-  // the brother: tall and lanky, knitted green beanie with a pompom, a green jacket over a
-  // cream shirt, an orange scarf, teal trousers, laced boots, a satchel and his lantern
+  // the brother: tall and lanky, knitted green beanie with a pompom, a brown mustache with
+  // curled tips, a green jacket over a cream shirt, an orange scarf, teal trousers, laced
+  // boots, a satchel and his lantern
   // ============================================================
   const SKIN = 0xf7c9a0;
   function brother(o) {
@@ -367,7 +368,12 @@ const Characters = (() => {
     const head = group(inner, 0, 1.45, 0);
     part()
       .ball(SKIN, { at: [0, 0.17, 0], size: [0.24, 0.255, 0.23], seg: [20, 14] })
-      .ball(0xf2b48c, { at: [0, 0.115, 0.235], size: [0.06, 0.055, 0.055] })
+      .ball(0xf2b48c, { at: [0, 0.115, 0.235], size: [0.06, 0.055, 0.055], seg: [12, 8] })
+      // mustache: two full brown lobes under the nose, the tips curling up
+      .ball(hair, { at: [-0.054, 0.07, 0.218], size: [0.07, 0.036, 0.035], rot: [0, -0.35, 0.22], seg: [12, 8] })
+      .ball(hair, { at: [0.054, 0.07, 0.218], size: [0.07, 0.036, 0.035], rot: [0, 0.35, -0.22], seg: [12, 8] })
+      .ball(hair, { at: [-0.116, 0.088, 0.186], size: [0.034, 0.022, 0.022], rot: [0, -0.7, -0.6] })
+      .ball(hair, { at: [0.116, 0.088, 0.186], size: [0.034, 0.022, 0.022], rot: [0, 0.7, 0.6] })
       .ball(SKIN, { at: [-0.235, 0.14, -0.01], size: [0.045, 0.065, 0.035] }).ball(SKIN, { at: [0.235, 0.14, -0.01], size: [0.045, 0.065, 0.035] })
       .ball(hair, { at: [0, 0.22, -0.05], size: [0.25, 0.21, 0.225] })
       .ball(hair, { at: [-0.21, 0.1, 0.02], size: [0.04, 0.08, 0.05] }).ball(hair, { at: [0.21, 0.1, 0.02], size: [0.04, 0.08, 0.05] })
@@ -376,7 +382,7 @@ const Characters = (() => {
       .dome((p, l) => Math.sin(Math.atan2(l.x, l.z) * 14) > 0.2 ? 0x2c6b3a : 0x347a44, { at: [0, 0.29, -0.01], size: [0.255, 0.24, 0.245], seg: [20, 6] })
       .torus((p, l) => Math.sin(Math.atan2(l.y, l.x) * 20) > 0 ? 0x8cc475 : 0x7ab866, { at: [0, 0.29, -0.01], rot: [Math.PI / 2 - 0.06, 0, 0], size: [0.25, 0.245, 0.25], tube: 0.2 })
       .ball(0xf2c94c, { at: [0, 0.55, -0.04], size: 0.075 })
-      .torus(0x6a2a20, { at: [0, 0.04, 0.218], rot: [-0.25, 0, Math.PI], size: 0.045, tube: 0.25, arc: Math.PI })
+      .torus(0x6a2a20, { at: [0, 0.028, 0.214], rot: [-0.25, 0, Math.PI], size: 0.042, tube: 0.25, arc: Math.PI })
       .ball(0xf29a8a, { at: [-0.13, 0.075, 0.19], size: [0.045, 0.028, 0.02], rot: [0, -0.6, 0] })
       .ball(0xf29a8a, { at: [0.13, 0.075, 0.19], size: [0.045, 0.028, 0.02], rot: [0, 0.6, 0] })
       .ball(hair, { at: [-0.09, 0.3, 0.205], size: [0.05, 0.014, 0.016], rot: [0, -0.3, 0.18] })

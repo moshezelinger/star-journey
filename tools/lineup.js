@@ -2,6 +2,7 @@
 // A picture of every character built in code (js/characters.js), side by side.
 //   node tools/lineup.js                 -> docs/frames/characters-lineup.jpg
 //   node tools/lineup.js brother side    -> one character, from the side (tools/out/lineup-brother-side.png)
+//   node tools/lineup.js brother face    -> one character's face up close
 const path = require("path");
 const H = require("./harness");
 

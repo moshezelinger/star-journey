@@ -64,6 +64,7 @@ if (only) {               // frame the one character by its bounding box
   const b = new THREE.Box3().setFromObject(items[0].g), c = b.getCenter(new THREE.Vector3()), h = Math.max(b.max.y - b.min.y, (b.max.x - b.min.x) * 0.9);
   const d = h / (2 * Math.tan(15 * Math.PI / 180)) * 1.25;
   camera.position.set(c.x, c.y + h * 0.15, c.z + d); camera.lookAt(c);
+  if (q.has("face")) { const fy = b.max.y - h * 0.16; camera.position.set(c.x - h * 0.12, fy + h * 0.03, c.z + h * 0.75); camera.lookAt(c.x, fy, c.z); }
 }
 else { camera.fov = 30; camera.position.set(0, 2.4, 13.5); camera.lookAt(0, 1.35, 0); }
 const labels = document.getElementById("labels");
