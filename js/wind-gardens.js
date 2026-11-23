@@ -309,36 +309,16 @@ const WindGardens = (() => {
     }
   }
 
+  // the brother with his lantern (js/characters.js); the glow sphere around the lantern is the
+  // level's, it grows at night and flashes with the signal
   function makeLuigi() {
-    const g = new THREE.Group();
-    const green = 0x2eaa4a, blue = 0x2a4fd0, skin = 0xffc79a, brown = 0x5b3a22;
-    const legs = new THREE.Group(); g.add(legs);
-    add(legs, box(0.34, 0.6, 0.36, blue), -0.2, 0.55, 0);
-    add(legs, box(0.34, 0.6, 0.36, blue), 0.2, 0.55, 0);
-    add(legs, box(0.4, 0.22, 0.55, brown), -0.2, 0.14, 0.06);
-    add(legs, box(0.4, 0.22, 0.55, brown), 0.2, 0.14, 0.06);
-    add(g, box(0.85, 0.75, 0.5, blue), 0, 1.3, 0);
-    add(g, box(0.85, 0.5, 0.52, green), 0, 1.58, 0);
-    const head = new THREE.Group(); head.position.y = 2.05; g.add(head);
-    add(head, new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), H.mat(skin)), 0, 0, 0);
-    add(head, new THREE.Mesh(new THREE.SphereGeometry(0.46, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), H.mat(green)), 0, 0.1, -0.02);
-    add(head, box(0.7, 0.08, 0.35, green), 0, 0.12, 0.38);
-    add(head, new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), H.mat(skin)), 0, -0.03, 0.42);
-    add(head, box(0.5, 0.1, 0.16, brown), 0, -0.2, 0.36);
-    const armL = new THREE.Group(); armL.position.set(-0.55, 1.65, 0); g.add(armL);
-    add(armL, box(0.22, 0.7, 0.22, green), 0, -0.3, 0);
-    const armR = new THREE.Group(); armR.position.set(0.55, 1.65, 0); g.add(armR);
-    add(armR, box(0.22, 0.7, 0.22, green), 0, -0.3, 0);
-    // lantern held on the left side
-    const lantern = new THREE.Group(); lantern.position.set(-0.78, 1.1, 0.2); g.add(lantern);
-    add(lantern, box(0.3, 0.38, 0.3, 0x3a3a46), 0, 0, 0);
-    const bulb = add(lantern, new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8),
-      new THREE.MeshBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.2 })), 0, 0, 0);
+    const b = Characters.brother({ height: 2.1, lantern: true });
     lanternGlow = new THREE.Mesh(new THREE.SphereGeometry(1.6, 14, 10),
       new THREE.MeshBasicMaterial({ color: 0xfff0b0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
-    lantern.add(lanternGlow);
-    g.scale.setScalar(1.15);
-    return { g, head, armL, armR, bulb, lantern };
+    b.lantern.add(lanternGlow);
+    lanternGlow.position.copy(b.bulb.position);
+    b.g.scale.setScalar(1.15);
+    return b;
   }
 
   function makeCart() {
@@ -358,101 +338,20 @@ const WindGardens = (() => {
     return g;
   }
 
-  // Enemies, second pass (issue #5): rounder, smooth-shaded original creatures. The returned
-  // parts (g, body, bang / wings) and their sizes are the ones the behaviour code animates.
-  const smoothMat = new Map();
-  function sm(color, opts) {                       // smooth-shaded, shared per colour
-    const key = color + (opts ? JSON.stringify(opts) : "");
-    let m = smoothMat.get(key);
-    if (!m) { m = H.mat(color, Object.assign({ flatShading: false, roughness: 0.7 }, opts || {})); smoothMat.set(key, m); }
-    return m;
-  }
-  function lathe(profile, seg) { return new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), seg || 18); }
-  function eye(parent, x, y, z, r, look) {
-    const e = add(parent, new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), sm(0xfffaf0)), x, y, z);
-    e.scale.set(1, 1.25, 0.7);
-    add(e, new THREE.Mesh(new THREE.SphereGeometry(r * 0.52, 10, 8), sm(0x1a1420, { roughness: 0.3 })), look * r * 0.15, -r * 0.05, r * 0.62);
-    add(e, new THREE.Mesh(new THREE.SphereGeometry(r * 0.16, 6, 5), sm(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.6 })), look * r * 0.3, r * 0.22, r * 0.95);
-    return e;
+  // Characters are GLB/glTF models (js/models.js, CLAUDE.md). The parts built in code below are
+  // the stand-in: they show until the model has loaded, and stay when it is not installed.
+  // keep: parts that stay visible with the model too (Luigi's lantern).
+  function withModel(id, parent, keep, opts) {
+    const stand = new THREE.Group(); stand.name = "stand-in";
+    for (const c of parent.children.slice()) if (!keep.includes(c)) stand.add(c);
+    parent.add(stand);
+    return Models.load(id, parent, stand, opts);
   }
 
-  // a mushroom walker: rust cap with pale spots and a gill skirt, a cream stem, big eyes, stubby feet
-  function makeGoomba() {
-    const g = new THREE.Group();
-    const body = new THREE.Group(); g.add(body);
-    add(body, new THREE.Mesh(lathe([[0, 0.12], [0.44, 0.14], [0.5, 0.3], [0.47, 0.5], [0.4, 0.62], [0, 0.66]]), sm(0xf8e8cc)), 0, 0, 0);
-    const cap = add(body, new THREE.Mesh(lathe([[0, 0.72], [0.6, 0.7], [0.84, 0.72], [0.9, 0.8], [0.82, 0.96], [0.6, 1.17], [0.3, 1.29], [0, 1.32]], 22), sm(0xd4582e, { roughness: 0.55 })), 0, 0, 0);
-    add(body, new THREE.Mesh(lathe([[0.83, 0.73], [0.6, 0.66], [0.38, 0.62]], 22), sm(0xe6cfa6, { side: THREE.DoubleSide })), 0, 0, 0);
-    // pale spots sitting on the cap surface (height from the cap profile at that radius)
-    const capProf = [[0, 1.32], [0.3, 1.29], [0.6, 1.17], [0.82, 0.96], [0.9, 0.8]];
-    const capY = (r) => { for (let i = 0; i < capProf.length - 1; i++) { const [r0, y0] = capProf[i], [r1, y1] = capProf[i + 1]; if (r <= r1) return y0 + (y1 - y0) * (r - r0) / (r1 - r0); } return 0.8; };
-    for (const [r, a] of [[0, 0], [0.42, 0.4], [0.45, 2.3], [0.5, 4.1], [0.7, 1.2], [0.72, 3.1], [0.68, 5.2], [0.25, 3.6]]) {
-      const x = Math.sin(a) * r, z = Math.cos(a) * r, y = capY(r);
-      const sp = add(cap, new THREE.Mesh(new THREE.SphereGeometry(r > 0.6 ? 0.09 : 0.12, 10, 6), sm(0xfff6e4)), x, y, z);
-      const n = new V3(x, (0.95 - y) * -1.2, z).normalize();      // roughly the cap normal there
-      if (r < 0.01) n.set(0, 1, 0);
-      sp.quaternion.setFromUnitVectors(new V3(0, 1, 0), n);
-      sp.position.addScaledVector(n, 0.035);
-      sp.scale.set(1, 0.4, 1);
-    }
-    eye(body, -0.17, 0.46, 0.38, 0.13, 1); eye(body, 0.17, 0.46, 0.38, 0.13, -1);
-    for (const x of [-0.17, 0.17]) {                // brows: they tilt in when it charges
-      const br = add(body, new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.06), sm(0x4a2a18)), x, 0.66, 0.45);
-      br.rotation.z = x > 0 ? 1.85 : 1.29;
-    }
-    add(body, new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.022, 6, 10, Math.PI), sm(0x5a2a1a)), 0, 0.32, 0.47).rotation.z = Math.PI;
-    for (const x of [-0.28, 0.28]) {
-      const f = add(body, new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), sm(0x5a3a22)), x, 0.02, 0.08);
-      f.scale.set(1, 0.8, 1.35); f.name = "foot";
-    }
-    const bang = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), new THREE.MeshBasicMaterial({ color: 0xff3a2a }));
-    bang.position.y = 2.2; bang.visible = false; g.add(bang);
-    return { g, body, bang };
-  }
-
-  // a winged turtle: a faceted olive shell with a cream rim, a pale belly, a beaked head and
-  // fanned feathered wings
-  function makeKoopa() {
-    const g = new THREE.Group();
-    const body = new THREE.Group(); g.add(body);
-    const shell = add(body, new THREE.Mesh(new THREE.IcosahedronGeometry(0.66, 1), H.mat(0x3f8a4a, { roughness: 0.5 })), 0, 0.95, -0.08);
-    shell.scale.set(1, 0.82, 1.08);
-    add(body, new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.07, 6, 20), sm(0xf0e0b4)), 0, 0.8, -0.05).rotation.x = Math.PI / 2;
-    add(body, new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), sm(0xf3e2b0)), 0, 0.78, 0.12).scale.set(0.95, 0.75, 0.75);
-    const skin = 0x8cc46a;
-    const head = add(body, new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), sm(skin)), 0, 1.38, 0.52);
-    head.scale.set(1, 0.95, 1.1);
-    add(head, new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.24, 8), sm(0xe8b048, { roughness: 0.4 })), 0, -0.06, 0.32).rotation.x = Math.PI / 2;
-    eye(head, -0.13, 0.08, 0.2, 0.1, 1); eye(head, 0.13, 0.08, 0.2, 0.1, -1);
-    add(body, new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.4, 10), sm(skin)), 0, 1.15, 0.38).rotation.x = 0.6;
-    for (const [x, z] of [[-0.35, 0.3], [0.35, 0.3], [-0.35, -0.35], [0.35, -0.35]]) {
-      const leg = add(body, new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), sm(skin)), x, 0.42, z);
-      leg.scale.set(1, 1.4, 1);
-      add(body, new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), sm(0xe8b048)), x, 0.22, z + 0.04).scale.set(1.1, 0.7, 1.4);
-    }
-    add(body, new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.3, 6), sm(skin)), 0, 0.6, -0.7).rotation.x = -2.0;
-    const wings = [];
-    const featherM = sm(0xfdfaf2, { side: THREE.DoubleSide, roughness: 0.9 }), tipM = sm(0xd8e4ee, { side: THREE.DoubleSide, roughness: 0.9 });
-    for (const sx of [-1, 1]) {
-      const w = new THREE.Group(); w.position.set(sx * 0.55, 1.1, -0.1); body.add(w);
-      for (let k = 0; k < 4; k++) {                  // four fanned feathers, longest at the top
-        const len = 0.95 - k * 0.14;
-        const f = add(w, new THREE.Mesh(new THREE.SphereGeometry(0.5, 10, 6), k === 0 ? tipM : featherM), sx * 0.08, 0.3 + len * 0.35 - k * 0.06, -0.15 - k * 0.12);
-        f.scale.set(0.07, len * 0.5, 0.26);
-        f.rotation.x = -0.35 - k * 0.28;
-      }
-      wings.push({ w, sx });
-    }
-    const shadow = new THREE.Mesh(new THREE.CircleGeometry(1.5, 20),
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false }));
-    shadow.scale.set(1, 0.7, 1);
-    // a faint warm ring around the shadow, so the dive mark still reads on dark ground at night
-    const ring = new THREE.Mesh(new THREE.RingGeometry(1.32, 1.6, 28),
-      new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-    ring.position.z = 0.01;
-    shadow.add(ring);
-    return { g, body, wings, shadow, ring };
-  }
+  // Enemies (js/characters.js): original creatures built in code. The returned parts (g, body,
+  // bang / wings, shadow) and their sizes are the ones the behaviour code below animates.
+  function makeGoomba() { return Characters.mushroomWalker(); }
+  function makeKoopa() { return Characters.wingedTurtle(); }
 
   // ---------- canyon strip: fine mesh, strata colours, darker and bluer with depth ----------
   function buildCanyon(cs) {
@@ -1071,6 +970,7 @@ const WindGardens = (() => {
 
     // Luigi on the balcony + lantern beam
     luigi = makeLuigi();
+    luigi.model = withModel("luigi", luigi.g, [luigi.lantern], { height: Models.REGISTRY.luigi.height / 1.15 });
     group.add(put(luigi.g, LUIGI_SPOT.s, LUIGI_SPOT.l, bal.top));
     luigi.base = luigi.g.quaternion.clone();
     beam = H.makeBeam(0xfff0b0, 90);
@@ -1084,7 +984,9 @@ const WindGardens = (() => {
 
     // ---------- enemies ----------
     goomba = makeGoomba(); group.add(goomba.g);
+    goomba.model = withModel("goomba", goomba.body, []);
     koopa = makeKoopa(); group.add(koopa.g); group.add(koopa.shadow);
+    koopa.model = withModel("paratroopa", koopa.body, [koopa.dazed]);
 
     if (FX.merge) S.mergeInfo = mergeStatic([crateMesh, bladeRoot, lever.g, luigi.g, cart, goomba.g, koopa.g, koopa.shadow, tower, roof, balG, pedMesh, beam]);
 
@@ -1251,6 +1153,7 @@ const WindGardens = (() => {
     faceObj(koopa.g, upN, GameShared.projectTangent(e.fwd, upN));
     for (const w of koopa.wings) w.w.rotation.z = w.sx * Math.sin(ctx.t * flap) * 0.7;
     koopa.body.rotation.z = e.state === "grounded" ? Math.sin(e.t * 12) * 0.12 : 0;
+    if (koopa.dazed) koopa.dazed.visible = e.state === "grounded";      // stars over its head: punch it now
     // ground shadow, lying flat on the surface
     sh.position.copy(e.pos).addScaledVector(upN, 0.12);
     faceObj(sh, upN, GameShared.projectTangent(e.fwd, upN));
@@ -1638,6 +1541,9 @@ const WindGardens = (() => {
     return null;
   }
 
+  function wantsSmooth() { return FX.path && FX.canyon; }
+  function dayAxis() { const a = dirAt(70, 0), b = dirAt(71, 0); return { up: a, forward: b.sub(a) }; }   // the sun turns over s = 70
+  function hudText() { return "💡 " + objective(); }
   function objective() {
     if (S.rescued) return S.rescueT > 5.4 ? "Luigi is safe! Enter the gate" : "Luigi is safe!";
     if (S.climbReady) return "Climb the ladder to Luigi";
@@ -1652,7 +1558,7 @@ const WindGardens = (() => {
     get enemies() { return { goomba: S.goomba, koopa: S.koopa }; },
     mill: () => ({ angle: S.blades.angle, w: S.blades.w, state: S.blades.state, ladderOff: S.ladderOff, climbReady: S.climbReady }),
     setBladeAngle(a) { S.blades.angle = a; },
-    models: () => ({ goomba: goomba && goomba.g, koopa: koopa && koopa.g }),
+    models: () => ({ goomba: goomba && goomba.g, koopa: koopa && koopa.g, luigi: luigi && luigi.g }),
     get crateGone() { return !!crateSolid.gone; },
     get splits() { return S.splits || []; },
     get rescueCount() { return S.rescueCount || 0; },
@@ -1666,7 +1572,7 @@ const WindGardens = (() => {
   function attach(e) { env = e; reset(); }
 
   return {
-    configure, shapeGround, smoothGround, exitDir, build, attach, reset, update, query, drift, constrain,
+    configure, shapeGround, smoothGround, wantsSmooth, dayAxis, hudText, exitDir, build, attach, reset, update, query, drift, constrain,
     punchHit, aim, scripted, objective, debug, colliders, cameraHint, cameraFloor, cameraShot, cameraFocus,
     respawn: (P, hooks, restoreHealth) => respawn(P, hooks, restoreHealth),
     isLocked: () => S.locked,

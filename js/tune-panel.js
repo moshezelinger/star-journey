@@ -18,6 +18,11 @@ const TunePanel = (() => {
     goomba: { _title: "Goomba", sightRange: [6, 24, 1, "sight range"], warnTime: [0.3, 2.5, 0.05, "warning s"], chargeTime: [0.5, 3, 0.1, "charge s"], chargeSpeed: [3, 14, 0.5, "charge speed"], recoverTime: [0.3, 3, 0.1, "dizzy s"] },
     koopa: { _title: "Winged koopa", trackTime: [0.5, 3, 0.1, "follows s"], telegraphTime: [0.2, 1.6, 0.05, "shadow flash s"], diveTime: [0.15, 0.8, 0.01, "dive s"], dazedTime: [0.5, 4, 0.1, "dazed s"] },
     wind: { _title: "Wind", drift: [0, 1.5, 0.05, "drift"] },
+    flutter: { _title: "Flutter (star 3)", time: [0.3, 2, 0.05, "hover s"], lift: [0.3, 1.2, 0.05, "lift share"] },
+    dash: { _title: "Dash (star 4)", speed: [10, 30, 0.5, "units/s"], time: [0.2, 0.8, 0.05, "s"], lift: [0, 8, 0.5, "up units/s"] },
+    power: { _title: "Power punch (star 2)", charge: [0.2, 1.5, 0.05, "hold to charge s"] },
+    beetle: { _title: "Basalt beetle", sightRange: [6, 24, 1, "sight range"], warnTime: [0.3, 2.5, 0.05, "warning s"], chargeTime: [0.5, 3, 0.1, "charge s"], chargeSpeed: [3, 16, 0.5, "charge speed"], stuckTime: [0.8, 5, 0.1, "stuck s"] },
+    rocks: { _title: "Rolling stones", interval: [1.2, 6, 0.1, "seconds between stones"], speed: [3, 14, 0.5, "roll speed"] },
     camera: { _title: "Camera", zoom: [4.5, 16, 0.05, "default zoom"], pitch: [0.1, 1.15, 0.01, "default pitch"], lookAhead: [0, 6, 0.1, "air look-ahead"],
       zoomMin: [2, 8, 0.1, "zoom min"], zoomMax: [10, 24, 0.5, "zoom max"], pitchMin: [0.02, 0.4, 0.01, "pitch min"], pitchMax: [0.8, 1.4, 0.01, "pitch max"] },
     day: { _title: "Day and night", length: [30, 900, 10, "full cycle s"], startPhase: [0, 1, 0.01, "start offset (restart)"], morningHold: [0, 0.9, 0.05, "linger in daylight"],
@@ -55,6 +60,9 @@ const TunePanel = (() => {
     const perf = document.createElement("div");      // live numbers for measuring on a real device
     perf.innerHTML = `<h3>Performance</h3><div id="tunePerf" class="note"></div>`;
     el.appendChild(perf);
+    const stars = document.createElement("div");      // quick jump between the stars for testing (also Shift+1..4)
+    stars.innerHTML = `<h3>Jump to star</h3><div class="bar"><button data-star="0">1 Wind Gardens</button><button data-star="1">2 Basalt Mines</button><button data-star="2">3 Ink Swamp</button><button data-star="3">4 Furnace Moon</button></div><div class="note">Keyboard: Shift+1 to Shift+4.</div>`;
+    el.appendChild(stars);
     const day = document.createElement("div");
     day.innerHTML = `<h3>Time of day</h3><div id="tuneDay" class="note"></div><div class="bar">
       <button data-m="morning">Morning</button><button data-m="noon">Noon</button><button data-m="dusk">Dusk</button><button data-m="night">Night</button></div>`;
@@ -83,6 +91,7 @@ const TunePanel = (() => {
     el.addEventListener("click", e => {
       const b = e.target.closest("button"); if (!b) return;
       if (b.dataset.m && window.DayCycle) DayCycle.setMoment(b.dataset.m);
+      if (b.dataset.star !== undefined && window.goToStar) window.goToStar(+b.dataset.star);
       if (b.dataset.a === "save") { TUNE.save(); if (TUNE.bridge.gap !== gapAtLoad && confirm("The gap width needs a reload. Reload now?")) location.reload(); }
       if (b.dataset.a === "defaults") { TUNE.clear(); for (const g in TUNE_DEFAULTS) Object.assign(TUNE[g], TUNE_DEFAULTS[g]); inputs.forEach(f => f()); }
       if (b.dataset.a === "copy") { const txt = JSON.stringify(TUNE, null, 2); try { navigator.clipboard.writeText(txt); b.textContent = "Copied"; } catch (err) { prompt("Values", txt); } }

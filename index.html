@@ -140,6 +140,9 @@
     font-size:18px; color:#cfd8ff; text-align:center; padding:30px;
   }
   #legend { font-size:13px; color:#8e9ac4; line-height:1.8; }
+  #starPick { margin-top:10px; align-items:center; gap:8px; }
+  #starPick .pickLabel { font-size:13px; color:#8e9ac4; }
+  #starPick button { min-width:44px; padding:8px 12px; }
   .medal { font-size:52px; filter:drop-shadow(0 0 20px rgba(255,200,90,.6)); }
   #credits { font-size:11px; color:#6f7aa3; max-width:520px; line-height:1.5; }
   #credits a { color:#8e9ac4; }
@@ -157,6 +160,10 @@
   <div class="row">
     <button class="ghost" id="soundBtn">Sound: On</button>
   </div>
+  <div class="row" id="starPick">
+    <span class="pickLabel">Jump to star:</span>
+    <button class="ghost" data-star="0">1</button><button class="ghost" data-star="1">2</button><button class="ghost" data-star="2">3</button><button class="ghost" data-star="3">4</button>
+  </div>
   <p id="legend">Move with the left stick, jump with the button.<br>On a keyboard: WASD or arrows, Space to jump, drag to look.</p>
   <p id="credits">Bowser model: "<a href="https://sketchfab.com/3d-models/bowser-super-mario-bros1-d02c1fa828364677b890ea8b2d408b97" target="_blank" rel="noopener">Bowser Super Mario Bros.1</a>" by <a href="https://sketchfab.com/Vandacvi" target="_blank" rel="noopener">Vandacvi</a>, CC-BY-4.0.<br>Mario model: "<a href="https://sketchfab.com/3d-models/mario-movie-super-mario-movie-13d05e3c76a148568decf1e8f25888f8" target="_blank" rel="noopener">Mario Movie (Super Mario Movie)</a>" by <a href="https://sketchfab.com/guinavarro.al" target="_blank" rel="noopener">Guilherme Navarro</a>, CC-BY-4.0.<br>Unofficial fan project. Mario, Luigi, Bowser and related characters belong to Nintendo.</p>
 </div>
@@ -164,7 +171,7 @@
 <!-- Victory -->
 <div class="screen hidden" id="victory">
   <div class="medal">🌟</div>
-  <h2>Bowser is beaten - you found the lost starlight!</h2>
+  <h2>Everyone is together again, and the road home is painted!</h2>
   <p class="tagline">Thanks for playing</p>
   <p id="timeText" class="tagline"></p>
   <div class="row">
@@ -195,7 +202,12 @@
 <script src="js/shared.js"></script>
 <script src="js/tuning.js"></script>
 <script src="js/day-cycle.js"></script>
+<script src="js/models.js"></script>
+<script src="js/characters.js"></script>
 <script src="js/wind-gardens.js"></script>
+<script src="js/basalt-mines.js"></script>
+<script src="js/ink-swamp.js"></script>
+<script src="js/furnace-moon.js"></script>
 <script src="js/tune-panel.js"></script>
 <script>
 "use strict";
@@ -397,18 +409,22 @@ const PLANET_DEFS = [
     ground: 0x76c862, low: 0x58ad54, key: 220, theme: "wind", hearts: true, spawnDir: new THREE.Vector3(0, 1, 0.2)
   },
   {
-    name: "Crystal Planet", center: new THREE.Vector3(74, 16, -46).multiplyScalar(WORLD_SCALE), radius: 8 * WORLD_SCALE, gravity: 24,
-    ground: 0x5f6fd0, low: 0x3a3f8a, key: 262, theme: "crystal", spawnDir: new THREE.Vector3(-0.3, 1, 0.3)
+    name: "Basalt Mines", center: new THREE.Vector3(74, 16, -46).multiplyScalar(WORLD_SCALE), radius: 15 * WORLD_SCALE, gravity: 24, detail: 42,
+    ground: 0x3f9a3a, low: 0x2c6e30, key: 233, theme: "mines", hearts: true, spawnDir: new THREE.Vector3(-0.3, 1, 0.3)
   },
   {
-    name: "Tiny Moon", center: new THREE.Vector3(6, 52, -122).multiplyScalar(WORLD_SCALE), radius: 6 * WORLD_SCALE, gravity: 13,
-    ground: 0x9fb4c8, low: 0x6a7c92, key: 196, theme: "moon", spawnDir: new THREE.Vector3(0.2, 1, 0.4)
+    name: "Ink Swamp", center: new THREE.Vector3(6, 52, -122).multiplyScalar(WORLD_SCALE), radius: 14 * WORLD_SCALE, gravity: 24, detail: 40,
+    ground: 0x4f7a4a, low: 0x2f4f3a, key: 208, theme: "swamp", hearts: true, spawnDir: new THREE.Vector3(0.2, 1, 0.4)
   },
   {
-    name: "Bowser's Star Garden", center: new THREE.Vector3(84, 6, -196).multiplyScalar(WORLD_SCALE), radius: 10 * WORLD_SCALE, gravity: 22,
-    ground: 0xd873c8, low: 0x8b3fa8, key: 147, theme: "garden", spawnDir: new THREE.Vector3(0.45, 0.8, 0.4), boss: true
+    name: "Furnace Moon", center: new THREE.Vector3(84, 6, -196).multiplyScalar(WORLD_SCALE), radius: 10 * WORLD_SCALE, gravity: 24, detail: 36,
+    ground: 0x5a4a46, low: 0x2e2626, key: 147, theme: "furnace", hearts: true, spawnDir: new THREE.Vector3(0.45, 0.8, 0.4)
   }
 ];
+
+// Star levels: each theme with its own module answers the same hooks (terrain, physics, punch, camera, HUD).
+const LEVELS = { wind: WindGardens, mines: BasaltMines, swamp: InkSwamp, furnace: FurnaceMoon };
+function levelOf(p) { return (p && LEVELS[p.def.theme]) || null; }
 
 const planets = [];
 const UP_Y = new THREE.Vector3(0, 1, 0);
@@ -516,10 +532,11 @@ function buildPlanet(def, index) {
   const detail = def.detail || Math.max(4, Math.round(def.radius / 3.5));
   const bodyGeo = new THREE.IcosahedronGeometry(def.radius, detail);
   paintGround(bodyGeo, def, index);
-  if (def.theme === "wind") { WindGardens.configure(def); WindGardens.shapeGround(bodyGeo); }
-  const smoothWind = def.theme === "wind" && FX.path && FX.canyon;
-  if (smoothWind) WindGardens.smoothGround(bodyGeo, groundTint(def, index));
-  const body = new THREE.Mesh(bodyGeo, mat(0xffffff, { roughness: 0.95, vertexColors: true, flatShading: !smoothWind }));
+  const LV = LEVELS[def.theme] || null;
+  if (LV) { LV.configure(def); LV.shapeGround(bodyGeo); }
+  const smoothLv = !!(LV && LV.wantsSmooth());
+  if (smoothLv) LV.smoothGround(bodyGeo, groundTint(def, index));
+  const body = new THREE.Mesh(bodyGeo, mat(0xffffff, { roughness: 0.95, vertexColors: true, flatShading: !smoothLv }));
   group.add(body);
 
   const glow = new THREE.Mesh(
@@ -544,8 +561,8 @@ function buildPlanet(def, index) {
   const spawnAxis = def.spawnDir.clone().normalize();
 
   // ---- decorations per theme ----
-  if (def.theme === "wind") {
-    WindGardens.build(p, group, { mat: mat, rng: rng, makeBeam: makeBeam, tint: groundTint(def, index) });
+  if (LV) {
+    LV.build(p, group, { mat: mat, rng: rng, makeBeam: makeBeam, tint: groundTint(def, index) });
     // sun shadows (issue #5): solid scenery casts and receives; the ground only receives
     if (FX.shadows) group.traverse(o => {
       if (!o.isMesh) return;
@@ -609,21 +626,8 @@ function buildPlanet(def, index) {
     }
   }
 
-  if (def.theme === "garden") {
-    const stemM = mat(0x8a4bb0);
-    const petalM = mat(0xffc4f2, { emissive: 0xff5fd0, emissiveIntensity: 0.55 });
-    const ringM = mat(0xa9d6ff, { emissive: 0x4aa0ff, emissiveIntensity: 0.7 });
-    scatter(group, rand, R, 460, [
-      { geo: new THREE.CylinderGeometry(0.05, 0.05, 0.6, 4), mat: stemM, y: 0.3 },
-      { geo: new THREE.IcosahedronGeometry(0.24, 0), mat: petalM, y: 0.72 }
-    ], { sMin: 0.9, sMax: 3.2 });
-    scatter(group, rand, R, 70, [
-      { geo: new THREE.TorusGeometry(1.4, 0.07, 6, 24), mat: ringM, y: 1.4, rot: new THREE.Euler(Math.PI / 2, 0, 0) }
-    ], { sMin: 0.8, sMax: 3 });
-  }
-
   // ---- star shards (within reach of the landing spot, each with a light pillar) ----
-  const shardCount = (def.boss || def.theme === "wind") ? 0 : 5;
+  const shardCount = LV ? 0 : 5;
   const used = [];
   for (let i = 0; i < shardCount; i++) {
     let dir;
@@ -645,7 +649,7 @@ function buildPlanet(def, index) {
 
   // ---- exit gate (all planets except the last) ----
   if (index < PLANET_DEFS.length - 1) {
-    const exitDir = def.theme === "wind" ? WindGardens.exitDir() : randomDirInCap(rand, spawnAxis, 0.5, 1.2);
+    const exitDir = LV ? LV.exitDir() : randomDirInCap(rand, spawnAxis, 0.5, 1.2);
     p.exitDir = exitDir.clone();
     const holder = new THREE.Group();
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.16, 8, 28), MAT.gate);
@@ -657,21 +661,6 @@ function buildPlanet(def, index) {
     place(holder, exitDir, 0);
     holder.visible = false;
     p.gate = { holder: holder, ring: ring, dir: exitDir.clone() };
-  }
-
-  // ---- grand star on the last planet (appears where Bowser falls) ----
-  if (index === PLANET_DEFS.length - 1) {
-    const dir = spawnAxis.clone();
-    const holder = new THREE.Group();
-    const star = new THREE.Mesh(new THREE.OctahedronGeometry(1.05, 0), MAT.grand);
-    star.position.y = 2.2;
-    const halo = new THREE.Mesh(new THREE.SphereGeometry(2.1, 16, 12),
-      new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false }));
-    halo.position.y = 2.2;
-    holder.add(star); holder.add(halo); holder.add(makeBeam(0xffe08a, 120));
-    place(holder, dir, 0);
-    holder.visible = false;
-    p.grand = { holder: holder, star: star, dir: dir.clone(), taken: false };
   }
 
   // Level of detail (docs/performance-rules.md): everything but the ground sphere and its glow goes
@@ -714,10 +703,14 @@ const AutoRes = (() => {
     get pixelRatio() { return pr; }
   };
 })();
-{ // the sun turns over the middle of the route (s = 70)
-  const mid = WindGardens.debug.dirAt(70, 0), ahead = WindGardens.debug.dirAt(71, 0);
-  DayCycle.configure(mid, ahead.sub(mid));
+// the sun turns over the middle of the route of the star the hero is on (each level's dayAxis)
+function configureDay(p) {
+  const L = levelOf(p);
+  if (!L) return;
+  const a = L.dayAxis();
+  DayCycle.configure(a.up, a.forward);
 }
+configureDay(planets[0]);
 
 // ---------- particles ----------
 const Particles = {
@@ -855,7 +848,12 @@ const P = {
   walkPhase: 0,
   health: 3,
   invuln: 0,
-  airJumps: 1, coyote: 0, punchT: 0, punchHit: false, climbing: false, punchDir: new THREE.Vector3()
+  airJumps: 1, coyote: 0, punchT: 0, punchHit: false, climbing: false, punchDir: new THREE.Vector3(),
+  hasPower: false, charge: 0, punchPower: false,  // power punch, found in star 2
+  flutterT: 0,       // star 3: the dinosaur's flutter time left
+  dashT: 0, dashed: false,   // star 4: the dash out of a double jump (time left, used in this jump)
+  coins: 0,          // coins carry across the stars (abilities in stars 3 and 4)
+  painted: false     // hit by the young villain's paint on the way from star 2 (the opening of star 3)
 };
 const PUNCH_TIME = 0.38;
 const PUNCH_ARM = { x: 1.5, y: 1.0 };   // shoulder offsets for the punch pose (checked visually)
@@ -876,479 +874,8 @@ let startTime = 0, finishTime = 0;
 let transition = null;
 let menuAngle = 0;
 
-// ---------- Bowser: boss of the last planet ----------
-// Stomp his head 3 times. He chases Mario, spits fireballs that roll along
-// the ground, and jump-slams to send out shockwave rings to hop over.
-const BOSS_HEIGHT = 4.0;
-const BOSS_HP = 3;
-const Boss = {
-  planet: null, root: new THREE.Group(), rig: new THREE.Group(),
-  ready: false, bones: {}, rest: {}, mats: [],
-  dir: new THREE.Vector3(0, 1, 0), face: new THREE.Vector3(0, 0, 1),
-  alt: 0, vAlt: 0, hp: BOSS_HP, state: "off", t: 0, attackTimer: 0,
-  phase: 0, mouth: 0, flags: {}, fireballs: [], waves: [],
-  defeated: false, restartTimer: 0, smokeTimer: 0, lastAttack: "slam"
-};
-Boss.root.add(Boss.rig);
-Boss.root.visible = false;
+// camera shake (hits, slams, explosions); decays in updateCameraFollow
 let camShake = 0;
-
-(function loadBowser() {
-  const loader = new THREE.GLTFLoader();
-  loader.load(
-    "assets/bowser/scene.gltf",
-    (gltf) => {
-      const model = gltf.scene;
-      // the file ships a stray helper mesh hundreds of units away - drop it
-      const stray = [];
-      model.traverse(o => { if (o.isMesh && o.material && /mssbMtl/.test(o.material.name)) stray.push(o); });
-      stray.forEach(o => o.parent.remove(o));
-      model.traverse(o => {
-        if (!o.isMesh) return;
-        // skinned pose lies far outside the bind-pose bounds: never cull, and
-        // let the measuring rays below past the bounding-sphere early-out
-        o.frustumCulled = false;
-        if (o.isSkinnedMesh) {
-          o.geometry.computeBoundingSphere();
-          o.geometry.boundingSphere.radius = 1e5;
-        }
-        const m = o.material.clone();
-        o.material = m;
-        Boss.mats.push({ m: m, emissive: m.emissive ? m.emissive.clone() : null });
-      });
-
-      // measure the posed character with rays (same reason as Mario: Box3 only
-      // sees the raw bind data of a skinned mesh)
-      model.updateMatrixWorld(true);
-      const rc = new THREE.Raycaster();
-      rc.far = 1e7;
-      rc.set(new THREE.Vector3(0, 1e6, 0), new THREE.Vector3(0, -1, 0));
-      const topHit = rc.intersectObject(model, true)[0];
-      let minY = Infinity;
-      if (topHit) {
-        const ext = Math.max(1, topHit.point.y) * 0.9;
-        const step = ext / 30;
-        for (let x = -ext; x <= ext; x += step) {
-          for (let z = -ext; z <= ext; z += step) {
-            rc.set(new THREE.Vector3(x, -1e6, z), new THREE.Vector3(0, 1, 0));
-            const hit = rc.intersectObject(model, true)[0];
-            if (hit && hit.point.y < minY) minY = hit.point.y;
-          }
-        }
-      }
-      let scale = 1, footY = 0;
-      if (topHit && isFinite(minY) && topHit.point.y > minY) {
-        scale = BOSS_HEIGHT / (topHit.point.y - minY);
-        footY = minY;
-      }
-      model.scale.setScalar(scale);
-      model.position.y = -footY * scale;
-      Boss.rig.add(model);
-
-      model.traverse(o => { if (o.isBone) Boss.bones[o.name] = o; });
-      Object.keys(Boss.bones).forEach(k => { Boss.rest[k] = Boss.bones[k].rotation.clone(); });
-      Boss.ready = true;
-    },
-    undefined,
-    (err) => {
-      console.error("Bowser model failed to load, using a simple stand-in:", err);
-      Boss.rig.add(buildFallbackBowser());
-      Boss.ready = true;
-    }
-  );
-})();
-
-function buildFallbackBowser() {
-  const g = new THREE.Group();
-  const shellM = mat(0x2f9a3a), skinM = mat(0xe8c26a), spikeM = mat(0xf4f0e0), hairM = mat(0xe0442c), hornM = mat(0xf7f1dc);
-  const shell = new THREE.Mesh(new THREE.SphereGeometry(1.35, 16, 12), shellM);
-  shell.position.set(0, 1.9, -0.35); shell.scale.set(1, 1.05, 0.9); g.add(shell);
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 12), skinM);
-  belly.position.set(0, 1.7, 0.35); g.add(belly);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.8, 14, 10), skinM);
-  head.position.set(0, 3.25, 0.55); g.add(head);
-  for (let i = 0; i < 7; i++) {
-    const sp = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.55, 6), spikeM);
-    const a = (i / 7) * Math.PI * 2;
-    sp.position.set(Math.cos(a) * 0.9, 2.2 + Math.sin(a) * 0.9, -1.4);
-    sp.rotation.x = -Math.PI / 2; g.add(sp);
-  }
-  [-0.45, 0.45].forEach(x => {
-    const h = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.6, 6), hornM);
-    h.position.set(x, 3.95, 0.4); h.rotation.z = -x * 0.8; g.add(h);
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 0.9, 8), skinM);
-    leg.position.set(x * 1.6, 0.45, 0); g.add(leg);
-  });
-  const hair = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.9, 6), hairM);
-  hair.position.set(0, 3.9, 0.05); hair.rotation.x = -0.6; g.add(hair);
-  return g;
-}
-
-function bossClearProjectiles() {
-  Boss.fireballs.forEach(f => Boss.planet && Boss.planet.group.remove(f.mesh));
-  Boss.waves.forEach(w => { Boss.planet && Boss.planet.group.remove(w.mesh); w.mesh.geometry.dispose(); });
-  Boss.fireballs.length = 0;
-  Boss.waves.length = 0;
-}
-
-function bossReset() {
-  bossClearProjectiles();
-  if (Boss.root.parent) Boss.root.parent.remove(Boss.root);
-  Boss.root.visible = false;
-  Boss.state = "off";
-  Boss.defeated = false;
-  Boss.restartTimer = 0;
-  Boss.hp = BOSS_HP;
-}
-
-function bossStart(planet) {
-  bossClearProjectiles();
-  Boss.planet = planet;
-  planet.group.add(Boss.root);
-  Boss.root.visible = true;
-  Boss.root.scale.setScalar(1);
-  Boss.rig.rotation.set(0, 0, 0);
-  Boss.hp = BOSS_HP;
-  Boss.defeated = false;
-  Boss.state = "intro";
-  Boss.t = 0; Boss.alt = 0; Boss.vAlt = 0; Boss.flags = {};
-  Boss.restartTimer = 0;
-  const spawn = planet.def.spawnDir.clone().normalize();
-  const side = projectTangent(new THREE.Vector3(1, 0, 0), spawn);
-  Boss.dir.copy(spawn).applyAxisAngle(side, 24 / planet.radius).normalize();
-  Boss.face.copy(projectTangent(spawn.clone().sub(Boss.dir), Boss.dir));
-  // turn the camera so Mario lands looking straight at him
-  camDir.copy(projectTangent(Boss.dir.clone().sub(spawn), spawn));
-  P.face.copy(camDir);
-  P.health = 3;
-  P.invuln = 0;
-  Audio.roar();
-  camShake = 0.4;
-  toast("Bowser appears!", 2600);
-  hint("Jump on Bowser's head 3 times!\nDodge the fireballs, hop over the shockwaves.", 8000);
-  updateHud();
-}
-
-function bossFlash(on) {
-  Boss.mats.forEach(e => {
-    if (!e.m.emissive) return;
-    if (on) e.m.emissive.setRGB(0.9, 0.12, 0.05); else e.m.emissive.copy(e.emissive);
-  });
-}
-
-function bossMove(dist) {
-  const R = Boss.planet.radius;
-  const p = Boss.dir.clone().multiplyScalar(R).addScaledVector(Boss.face, dist);
-  Boss.dir.copy(p.normalize());
-  Boss.face.copy(projectTangent(Boss.face, Boss.dir));
-}
-
-function bossTurnTo(target, rate) {
-  Boss.face.lerp(target, rate);
-  Boss.face.copy(projectTangent(Boss.face, Boss.dir));
-}
-
-function spawnFireball(angle) {
-  const R = Boss.planet.radius;
-  const up = Boss.dir;
-  const f = Boss.face.clone().applyAxisAngle(up, angle);
-  const axis = new THREE.Vector3().crossVectors(up, f).normalize();
-  const dir = up.clone().applyAxisAngle(axis, 1.8 / R);
-  const mesh = new THREE.Group();
-  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 1),
-    new THREE.MeshStandardMaterial({ color: 0xffa040, emissive: 0xff4a10, emissiveIntensity: 1.6, roughness: 0.4 }));
-  const halo = new THREE.Mesh(new THREE.SphereGeometry(0.95, 12, 10),
-    new THREE.MeshBasicMaterial({ color: 0xff7a30, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
-  mesh.add(core); mesh.add(halo);
-  Boss.planet.group.add(mesh);
-  Boss.fireballs.push({ mesh: mesh, core: core, dir: dir, axis: axis, life: 5, trail: 0 });
-}
-
-function spawnWave() {
-  const N = 96;
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array((N + 1) * 2 * 3), 3));
-  const idx = [];
-  for (let i = 0; i < N; i++) {
-    const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
-    idx.push(a, c, b, b, c, d);
-  }
-  geo.setIndex(idx);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-    color: 0xff9a40, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending,
-    depthWrite: false, side: THREE.DoubleSide }));
-  mesh.frustumCulled = false;
-  Boss.planet.group.add(mesh);
-  const c = Boss.dir.clone();
-  const t1 = projectTangent(new THREE.Vector3(0.3, 0.8, 0.5), c);
-  const t2 = new THREE.Vector3().crossVectors(c, t1);
-  Boss.waves.push({ mesh: mesh, c: c, t1: t1, t2: t2, r: 1.5, N: N });
-}
-
-function updateWaveGeometry(w, R) {
-  const pos = w.mesh.geometry.attributes.position;
-  const th = w.r / R, ct = Math.cos(th), st = Math.sin(th);
-  const d = new THREE.Vector3();
-  for (let i = 0; i <= w.N; i++) {
-    const phi = (i / w.N) * Math.PI * 2;
-    d.copy(w.c).multiplyScalar(ct)
-      .addScaledVector(w.t1, st * Math.cos(phi))
-      .addScaledVector(w.t2, st * Math.sin(phi));
-    const lo = d.clone().multiplyScalar(R + 0.03), hi = d.clone().multiplyScalar(R + 0.75);
-    pos.setXYZ(i * 2, lo.x, lo.y, lo.z);
-    pos.setXYZ(i * 2 + 1, hi.x, hi.y, hi.z);
-  }
-  pos.needsUpdate = true;
-}
-
-function hurtPlayer(away) {
-  if (P.invuln > 0 || state !== S.PLAYING || Boss.restartTimer > 0) return;
-  P.health--;
-  P.invuln = 1.6;
-  Audio.hurt();
-  camShake = 0.35;
-  const up = surfaceUp(P.pos, active);
-  const push = projectTangent(away, up);
-  P.vel.copy(push).multiplyScalar(9).addScaledVector(up, 8);
-  P.grounded = false;
-  Particles.spawn(P.pos.clone().addScaledVector(up, 0.8), 0xff6a4a, 14, 3);
-  updateHud();
-  if (P.health <= 0) {
-    toast("Bowser got you! Try again.", 2200);
-    Boss.restartTimer = 1.8;
-    P.invuln = 99;
-  }
-}
-
-function updateBoss(dt) {
-  if (Boss.state === "off" || !Boss.planet) return;
-  const pl = Boss.planet, R = pl.radius;
-
-  if (Boss.restartTimer > 0) {
-    Boss.restartTimer -= dt;
-    if (Boss.restartTimer <= 0) {
-      landOnPlanet(planets.indexOf(pl));
-      return;
-    }
-  }
-
-  Boss.t += dt;
-  const up = Boss.dir;
-  const mLocal = P.pos.clone().sub(pl.center);
-  const mUp = mLocal.clone().normalize();
-  const mH = mLocal.length() - R;
-  const arc = R * Math.acos(clamp(mUp.dot(up), -1, 1));
-  const toMario = projectTangent(mUp.clone().sub(up), up);
-  const rage = BOSS_HP - Boss.hp; // 0..2, gets faster and meaner each hit
-  let mouthTarget = 0, walking = false;
-
-  switch (Boss.state) {
-    case "intro":
-      bossTurnTo(toMario, Math.min(1, dt * 3));
-      mouthTarget = Boss.t < 1.6 ? 1 : 0;
-      if (Boss.t > 2.6) { Boss.state = "walk"; Boss.t = 0; Boss.attackTimer = 2.2; }
-      break;
-
-    case "walk":
-      bossTurnTo(toMario, Math.min(1, dt * 2.6));
-      if (arc > 2.4) { bossMove((3.4 + rage * 1.2) * dt); walking = true; }
-      Boss.attackTimer -= dt;
-      if (Boss.attackTimer <= 0) {
-        let next = Boss.lastAttack === "fire" ? "slam" : "fire";
-        if (arc > 14) next = "fire";
-        else if (arc < 6) next = "slam";
-        Boss.state = next; Boss.lastAttack = next;
-        Boss.t = 0; Boss.flags = {};
-      }
-      break;
-
-    case "fire":
-      bossTurnTo(toMario, Math.min(1, dt * 4));
-      mouthTarget = Boss.t < 0.75 ? Boss.t / 0.75 : 1;
-      if (Boss.t >= 0.75 && !Boss.flags.fired) {
-        Boss.flags.fired = true;
-        const spread = rage >= 2 ? [-0.5, -0.25, 0, 0.25, 0.5] : [-0.3, 0, 0.3];
-        spread.forEach(spawnFireball);
-        Audio.fire();
-      }
-      if (rage >= 1 && Boss.t >= 1.35 && !Boss.flags.fired2) {
-        Boss.flags.fired2 = true;
-        [-0.15, 0.15].forEach(spawnFireball);
-        Audio.fire();
-      }
-      if (Boss.t > 1.7) { Boss.state = "tired"; Boss.t = 0; }
-      break;
-
-    case "tired": // the opening - he stands panting, smoke puffing from his nose
-      mouthTarget = 0.35;
-      Boss.smokeTimer -= dt;
-      if (Boss.smokeTimer <= 0) {
-        Boss.smokeTimer = 0.3;
-        const head = pl.center.clone().addScaledVector(up, R + Boss.alt + BOSS_HEIGHT * 0.85).addScaledVector(Boss.face, 0.8);
-        Particles.spawn(head, 0x9a9aa8, 6, 1.2);
-      }
-      if (Boss.t > 1.5 - rage * 0.25) { Boss.state = "walk"; Boss.t = 0; Boss.attackTimer = 3.0 - rage * 0.6; }
-      break;
-
-    case "slam":
-      if (!Boss.flags.jumped) {
-        bossTurnTo(toMario, Math.min(1, dt * 4));
-        Boss.rig.scale.set(1.08, 0.86, 1.08);
-        if (Boss.t > 0.45) { Boss.flags.jumped = true; Boss.vAlt = 11; Boss.rig.scale.set(1, 1, 1); Audio.jump(); }
-      } else {
-        Boss.vAlt -= pl.gravity * dt;
-        Boss.alt += Boss.vAlt * dt;
-        bossMove(Math.min(arc, 4 + rage * 2) * dt);
-        if (Boss.alt <= 0 && Boss.vAlt < 0) {
-          Boss.alt = 0; Boss.vAlt = 0;
-          spawnWave();
-          if (rage >= 2) setTimeout(() => { if (Boss.state !== "off" && Boss.state !== "defeated") spawnWave(); }, 450);
-          Audio.boom();
-          camShake = 0.7;
-          Particles.spawn(pl.center.clone().addScaledVector(up, R + 0.3), 0xffc080, 30, 6);
-          Boss.state = "tired"; Boss.t = 0;
-        }
-      }
-      break;
-
-    case "hurt":
-      Boss.rig.rotation.y += dt * 14 * Math.max(0, 1 - Boss.t / 1.0);
-      bossFlash(Math.floor(Boss.t * 10) % 2 === 0);
-      if (Boss.alt > 0 || Boss.vAlt > 0) {
-        Boss.vAlt -= pl.gravity * dt; Boss.alt = Math.max(0, Boss.alt + Boss.vAlt * dt);
-        if (Boss.alt === 0) Boss.vAlt = 0;
-      }
-      if (Boss.t > 1.6) {
-        bossFlash(false);
-        Boss.rig.rotation.y = 0;
-        if (Boss.hp <= 0) {
-          Boss.state = "defeated"; Boss.t = 0;
-          Audio.roar();
-          toast("Bowser is defeated!", 3000);
-        } else {
-          Boss.state = "walk"; Boss.t = 0; Boss.attackTimer = 1.4;
-          Audio.roar();
-          camShake = 0.3;
-        }
-      }
-      break;
-
-    case "defeated":
-      Boss.rig.rotation.y += dt * (8 + Boss.t * 10);
-      Boss.alt += dt * (3 + Boss.t * 22);
-      Boss.root.scale.setScalar(Math.max(0.01, 1 - Boss.t / 2.4));
-      if (Boss.t > 2.4) {
-        Boss.root.visible = false;
-        Boss.state = "off";
-        Boss.defeated = true;
-        bossClearProjectiles();
-        const g = pl.grand;
-        g.dir.copy(Boss.dir);
-        placeOn(pl, g.holder, g.dir, 0);
-        g.holder.visible = true;
-        Particles.spawn(pl.center.clone().addScaledVector(g.dir, R + 2.2), 0xffe08a, 50, 6);
-        Audio.gate();
-        hint("Grab the Grand Star!", 6000);
-        updateHud();
-      }
-      break;
-  }
-
-  // ---- place & orient ----
-  Boss.root.position.copy(up).multiplyScalar(R + Boss.alt);
-  const bx = new THREE.Vector3().crossVectors(up, Boss.face).normalize();
-  Boss.root.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(bx, up, Boss.face));
-  if (Boss.state !== "slam") Boss.rig.scale.lerp(new THREE.Vector3(1, 1, 1), Math.min(1, dt * 8));
-
-  // ---- procedural animation on the skeleton (the model has no clips) ----
-  Boss.phase += dt * (walking ? 6.5 + rage : 0);
-  const w = walking ? 1 : 0;
-  Boss.rig.position.y = Math.abs(Math.sin(Boss.phase)) * 0.14 * w;
-  Boss.rig.rotation.z = Math.sin(Boss.phase) * 0.09 * w;
-  Boss.mouth += (mouthTarget - Boss.mouth) * Math.min(1, dt * 10);
-  // Axes verified by rendering test poses: shoulder local Z raises (+) / lowers (-)
-  // both arms, shoulder Y swings them forward; hip X swings a leg, and the
-  // mirrored L/R hips need opposite signs to alternate.
-  const b = Boss.bones, r = Boss.rest;
-  const roaring = Boss.state === "intro" || Boss.state === "hurt" || Boss.state === "defeated";
-  const armLift = roaring ? 0.55 + Math.sin(clock.elapsedTime * 10) * 0.15 : -0.95;
-  const stride = Math.sin(Boss.phase) * 0.35 * w;
-  if (b.c_mouth_06) b.c_mouth_06.rotation.x = r.c_mouth_06.x + Boss.mouth * 0.55;
-  if (b.c_head_05) b.c_head_05.rotation.x = r.c_head_05.x - Boss.mouth * 0.2;
-  if (b.R_leg_1_042) b.R_leg_1_042.rotation.x = r.R_leg_1_042.x + stride;
-  if (b.L_leg_1_045) b.L_leg_1_045.rotation.x = r.L_leg_1_045.x - stride;
-  if (b.R_shoulder_012) {
-    b.R_shoulder_012.rotation.z = r.R_shoulder_012.z + armLift;
-    b.R_shoulder_012.rotation.y = r.R_shoulder_012.y - stride * 0.8;
-  }
-  if (b.L_shoulder_025) {
-    b.L_shoulder_025.rotation.z = r.L_shoulder_025.z + armLift;
-    b.L_shoulder_025.rotation.y = r.L_shoulder_025.y + stride * 0.8;
-  }
-  if (b.c_tail_1_039) b.c_tail_1_039.rotation.y = r.c_tail_1_039.y + Math.sin(clock.elapsedTime * 2.2) * 0.35;
-
-  // ---- Mario vs Bowser ----
-  const live = Boss.state === "walk" || Boss.state === "fire" || Boss.state === "tired" || Boss.state === "slam";
-  if (live && Boss.restartTimer <= 0) {
-    const rel = mH - Boss.alt;
-    const falling = P.vel.dot(mUp) < 0;
-    if (falling && arc < 2.2 && rel >= BOSS_HEIGHT * 0.48 && rel <= BOSS_HEIGHT + 2) {
-      // stomp!
-      Boss.hp--;
-      Boss.state = "hurt"; Boss.t = 0;
-      if (Boss.alt > 0) Boss.vAlt = Math.min(Boss.vAlt, 0);
-      Audio.bossHit();
-      camShake = 0.5;
-      const vt = projectTangent(toMario.lengthSq() ? toMario : Boss.face, mUp);
-      P.vel.copy(vt).multiplyScalar(5).addScaledVector(mUp, 14);
-      P.grounded = false;
-      Particles.spawn(pl.center.clone().addScaledVector(up, R + Boss.alt + BOSS_HEIGHT), 0xffe27a, 26, 5);
-      toast(Boss.hp === 2 ? "Bonk! Two more!" : Boss.hp === 1 ? "Bonk! One more!" : "BONK!", 1500);
-      updateHud();
-    } else if (arc < 1.7 && rel < BOSS_HEIGHT * 0.48 && rel > -1) {
-      hurtPlayer(toMario.clone());
-    }
-  }
-
-  // ---- fireballs ----
-  const marioMid = P.pos.clone().addScaledVector(mUp, 0.7);
-  for (let i = Boss.fireballs.length - 1; i >= 0; i--) {
-    const f = Boss.fireballs[i];
-    f.life -= dt;
-    f.dir.applyAxisAngle(f.axis, (12 + rage * 2) * dt / R).normalize();
-    f.mesh.position.copy(f.dir).multiplyScalar(R + 0.75);
-    f.core.rotation.x += dt * 9; f.core.rotation.y += dt * 7;
-    const wp = f.mesh.position.clone().add(pl.center);
-    f.trail -= dt;
-    if (f.trail <= 0) { f.trail = 0.12; Particles.spawn(wp, 0xff7a30, 4, 1); }
-    let gone = f.life <= 0;
-    if (!gone && wp.distanceTo(marioMid) < 1.15) {
-      hurtPlayer(new THREE.Vector3().crossVectors(f.axis, f.dir));
-      gone = true;
-    }
-    if (gone) {
-      pl.group.remove(f.mesh);
-      Boss.fireballs.splice(i, 1);
-    }
-  }
-
-  // ---- shockwaves ----
-  for (let i = Boss.waves.length - 1; i >= 0; i--) {
-    const wv = Boss.waves[i];
-    wv.r += (11 + rage * 2) * dt;
-    updateWaveGeometry(wv, R);
-    wv.mesh.material.opacity = 0.85 * Math.max(0, 1 - wv.r / 34);
-    const marioArc = R * Math.acos(clamp(mUp.dot(wv.c), -1, 1));
-    if (mH < 0.65 && Math.abs(marioArc - wv.r) < 0.7) {
-      hurtPlayer(projectTangent(mUp.clone().sub(wv.c), mUp));
-    }
-    if (wv.r > 34) {
-      pl.group.remove(wv.mesh);
-      wv.mesh.geometry.dispose();
-      Boss.waves.splice(i, 1);
-    }
-  }
-}
 
 // ---------- UI ----------
 const ui = {
@@ -1387,15 +914,11 @@ function hint(msg, ms) {
   if (ms) hintTimer = setTimeout(() => ui.hint.classList.remove("show"), ms);
 }
 function updateHud() {
-  const boss = !!active.def.boss;
-  const hearts = (boss && !Boss.defeated) || !!active.def.hearts;
-  ui.shards.classList.toggle("boss", boss);
+  const hearts = !!active.def.hearts;
   ui.hearts.classList.toggle("on", hearts);
   if (hearts) ui.hearts.textContent = "❤️".repeat(Math.max(0, P.health)) + "🤍".repeat(3 - Math.max(0, P.health));
-  if (boss) {
-    ui.shards.textContent = Boss.defeated ? "⭐ Bowser defeated!" : "Bowser " + "♥".repeat(Math.max(0, Boss.hp)) + "♡".repeat(BOSS_HP - Math.max(0, Boss.hp));
-  } else if (active.def.theme === "wind") {
-    ui.shards.textContent = "💡 " + WindGardens.objective();
+  if (levelOf(active)) {
+    ui.shards.textContent = levelOf(active).hudText();
   } else {
     ui.shards.textContent = "⭐ " + active.collected + " / " + active.total;
   }
@@ -1411,17 +934,23 @@ const keys = {};
 window.addEventListener("keydown", e => {
   if (TunePanel.owns(e.target)) return;           // typing in the tuning panel does not move Mario
   keys[e.code] = true;
-  if (e.code === "Space") { e.preventDefault(); if (!e.repeat) jumpQueued = true; }
-  if ((e.code === "KeyJ" || e.code === "KeyF" || e.code === "KeyK") && !e.repeat) punchQueued = true;
+  if (e.code === "Space") { e.preventDefault(); if (!e.repeat) { jumpQueued = true; jumpHeld = true; } }
+  if ((e.code === "KeyJ" || e.code === "KeyF" || e.code === "KeyK") && !e.repeat) { punchQueued = true; punchHeld = true; }
   if (e.code === "KeyR" && !e.repeat) resetCamera();
+  if (e.shiftKey && /^Digit[1-4]$/.test(e.code) && !e.repeat && state !== S.MENU) goToStar(+e.code.slice(5) - 1);
 });
-window.addEventListener("keyup", e => { keys[e.code] = false; });
+window.addEventListener("keyup", e => {
+  keys[e.code] = false;
+  if (e.code === "Space") jumpHeld = false;
+  if ((e.code === "KeyJ" || e.code === "KeyF" || e.code === "KeyK") && punchHeld) { punchHeld = false; punchReleased = true; }
+});
 
 const stick = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
 const look = { id: null, lastX: 0, lastY: 0, id2: null, x2: 0, y2: 0, pinch: 0 };
 let jumpQueued = false;
 let jumpHeld = false;
 let punchQueued = false;
+let punchHeld = false, punchReleased = false;   // power punch (star 2 on): hold to charge, release to smash
 const isTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
 if (!isTouch) document.body.classList.add("desktop");
 
@@ -1452,7 +981,7 @@ document.addEventListener("touchstart", e => {
     if (t.target === ui.hudSound || t.target === ui.camReset) return;
     const inJump = t.target === ui.jumpBtn;
     if (inJump) { jumpQueued = true; jumpHeld = true; ui.jumpBtn.classList.add("pressed"); Audio.resume(); continue; }
-    if (t.target === ui.punchBtn) { punchQueued = true; ui.punchBtn.classList.add("pressed"); Audio.resume(); continue; }
+    if (t.target === ui.punchBtn) { punchQueued = true; punchHeld = true; ui.punchBtn.classList.add("pressed"); Audio.resume(); continue; }
     if (t.clientX < window.innerWidth * 0.5 && !stick.active) { stickStart(t.identifier, t.clientX, t.clientY); }
     else if (look.id === null) { look.id = t.identifier; look.lastX = t.clientX; look.lastY = t.clientY; }
     else if (look.id2 === null) { look.id2 = t.identifier; look.x2 = t.clientX; look.y2 = t.clientY; look.pinch = Math.hypot(look.x2 - look.lastX, look.y2 - look.lastY); }
@@ -1485,7 +1014,7 @@ function touchClear(e) {
     if (t.identifier === look.id) { look.id = look.id2; look.lastX = look.x2; look.lastY = look.y2; look.id2 = null; look.pinch = 0; }
     else if (t.identifier === look.id2) { look.id2 = null; look.pinch = 0; }
     if (t.target === ui.jumpBtn) { jumpHeld = false; ui.jumpBtn.classList.remove("pressed"); }
-    if (t.target === ui.punchBtn) ui.punchBtn.classList.remove("pressed");
+    if (t.target === ui.punchBtn) { ui.punchBtn.classList.remove("pressed"); if (punchHeld) { punchHeld = false; punchReleased = true; } }
   }
 }
 document.addEventListener("touchend", touchClear);
@@ -1532,7 +1061,7 @@ function hurtWind(away) {
   Particles.spawn(P.pos.clone().addScaledVector(up, 0.8), 0xff6a4a, 12, 3);
   if (P.health <= 0) {
     toast("Oops! Try again.", 1600);
-    WindGardens.respawn(P, wgEnv, true);
+    levelOf(active).respawn(P, wgEnv, true);
     P.invuln = 1.2;
   }
   updateHud();
@@ -1555,16 +1084,33 @@ const wgEnv = {
   P: P, t: 0, grounded: false, isTouch: isTouch,
   Audio: Audio, Particles: Particles, toast: toast, hint: hint,
   hurt: hurtWind, teleport: teleportPlayer, restoreHealth() { P.health = 3; updateHud(); }, fade: fadeFlash,
-  heightOf(pl) { return pl.pos.distanceTo(active.center) - active.radius; }
+  shake(v) { camShake = Math.max(camShake, v); }, refreshHud() { updateHud(); },
+  heightOf(pl) { return pl.pos.distanceTo(active.center) - active.radius; },
+  win() { finishJourney(); }
 };
+// the end of the whole journey (star 4 calls it once everyone is together)
+function finishJourney() {
+  if (state !== S.PLAYING) return;
+  Audio.victory();
+  Particles.spawn(P.pos.clone().addScaledVector(P.up, 2), 0xffe08a, 60, 7);
+  finishTime = performance.now() - startTime;
+  state = S.VICTORY;
+  setTimeout(() => {
+    const secs = Math.round(finishTime / 1000);
+    ui.timeText.textContent = "Journey time: " + Math.floor(secs / 60) + "m " + (secs % 60) + "s";
+    ui.victory.classList.remove("hidden");
+    ui.hud.classList.remove("on");
+  }, 1500);
+}
 function wgFrame() {
   wgEnv.t = clock.elapsedTime;
   wgEnv.grounded = P.grounded;
-  const obj = WindGardens.objective();
+  const L = levelOf(active);
+  const obj = L ? L.hudText() : "";
   if (obj !== lastObjective) { lastObjective = obj; updateHud(); }
   return wgEnv;
 }
-WindGardens.attach(wgEnv);
+for (const k in LEVELS) LEVELS[k].attach(wgEnv);
 
 // ---------- game flow ----------
 function landOnPlanet(index, dirOverride) {
@@ -1582,15 +1128,15 @@ function landOnPlanet(index, dirOverride) {
   player.position.copy(P.pos);
   orientPlayer(P.up, camDir, 1);
   Audio.setKey(active.def.key);
+  configureDay(active);
   applySky();
   player.visible = true;
-  if (active.def.boss && !Boss.defeated && state !== S.MENU) bossStart(active);
   updateHud();
 }
 
 // Wind Gardens runs the day and night cycle (js/day-cycle.js); every other planet and the menu keep the night sky
 function applySky() {
-  DayCycle.setEnabled(active.def.theme === "wind" && state !== S.MENU);
+  DayCycle.setEnabled(!!levelOf(active) && state !== S.MENU);
 }
 function resetGame() {
   Particles.clear();
@@ -1601,8 +1147,9 @@ function resetGame() {
     if (p.grand) { p.grand.taken = false; p.grand.holder.visible = false; }
   });
   transition = null;
-  bossReset();
-  WindGardens.reset();
+  P.hasPower = false; P.charge = 0; P.coins = 0; P.painted = false;
+  villain.g.visible = false; villainPaint.visible = false;
+  for (const k in LEVELS) LEVELS[k].reset();
   DayCycle.reset();                       // restart begins in the morning again
   camZoom = CAM_DEFAULT.zoom; camPitch = CAM_DEFAULT.pitch;
   P.health = 3;
@@ -1624,6 +1171,27 @@ function startGame() {
     ? "Left stick: move. Jump: tap, and tap again in the air.\nPunch button: smash. Find Luigi's lantern!"
     : "WASD: move. Space: jump, and again in the air.\nJ or F: punch. Find Luigi's lantern!", 8000);
 }
+
+// Quick jump to any star (for play-testing): the menu row, the tuning panel, or Shift+1..4 in the game.
+// The state matches the story at that point: the power punch from star 2 on, the hero painted on star 3.
+function goToStar(i) {
+  i = clamp(i | 0, 0, planets.length - 1);
+  if (state !== S.PLAYING && state !== S.TRANSITION) startGame();
+  transition = null;
+  const L = levelOf(planets[i]);
+  if (L) L.reset();
+  P.health = 3; P.invuln = 0; P.charge = 0;
+  P.hasPower = i >= 2;
+  P.painted = i === 2;
+  landOnPlanet(i);
+  state = S.PLAYING;
+  applySky();
+  updateHud();
+  fadeFlash();
+  toast("Star " + (i + 1) + ": " + planets[i].name, 1800);
+}
+window.goToStar = goToStar;
+document.querySelectorAll("#starPick button").forEach(b => b.addEventListener("click", () => { Audio.init(); Audio.click(); goToStar(+b.dataset.star); }));
 
 function goToMenu() {
   state = S.MENU;
@@ -1650,7 +1218,8 @@ function startTransition(nextIndex) {
     b: mid.add(away),
     c: endPos,
     next: nextIndex,
-    endDir: endDir
+    endDir: endDir,
+    ambush: active.def.theme === "mines" && !P.painted ? { stage: 0 } : null   // the young villain strikes on the way
   };
   hint("Launching to " + target.name, 2600);
 }
@@ -1677,6 +1246,36 @@ function collectShard(s) {
   }
 }
 
+// The fist glows while a power punch charges, and pulses once it is ready.
+const chargeGlow = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10),
+  new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+chargeGlow.position.set(-0.42, 0.95, 0.45);
+player.add(chargeGlow);
+let chargeSpark = 0;
+// The player's look: the hero's own model, or what the level gives (star 3: Luigi, then Luigi on the dinosaur)
+let currentAvatar = null;
+function updateAvatar() {
+  const L = levelOf(active);
+  const av = (L && L.avatar && state !== S.MENU) ? L.avatar() : null;
+  if (av !== currentAvatar) {
+    if (currentAvatar) player.remove(currentAvatar);
+    if (av) player.add(av);
+    currentAvatar = av;
+  }
+  playerRig.visible = !av;
+}
+function updateChargeGlow(dt) {
+  const k = P.hasPower ? clamp(P.charge / TUNE.power.charge, 0, 1) : 0;
+  const ready = k >= 1;
+  chargeGlow.visible = k > 0.02;
+  chargeGlow.material.opacity = 0.25 + 0.55 * k;
+  chargeGlow.scale.setScalar(0.6 + 1.1 * k + (ready ? 0.25 * Math.sin(clock.elapsedTime * 18) : 0));
+  if (ready) {
+    chargeSpark -= dt;
+    if (chargeSpark <= 0) { chargeSpark = 0.12; Particles.spawn(chargeGlow.getWorldPosition(new THREE.Vector3()), 0xffc060, 4, 1.6); }
+  }
+}
+
 // ---------- main loop ----------
 function updatePlaying(dt) {
   // camera yaw from input
@@ -1692,10 +1291,13 @@ function updatePlaying(dt) {
     active = planet;
     activeIndex = planets.indexOf(planet);
     Audio.setKey(active.def.key);
+    configureDay(active);
+    applySky();
     updateHud();
   }
 
-  const wg = active.def.theme === "wind" ? WindGardens : null;
+  const wg = levelOf(active);
+  const ab = (wg && wg.abilities) ? wg.abilities() : null;    // star 3: Luigi on the dinosaur (flutter, tongue)
   if (wg) DayCycle.update(dt);         // only while playing, so pausing pauses the day
   if (wg && !wg.isLocked()) {          // on the balcony, swing the camera to the side of the blades
     const hintDir = camYawIdle > 2 ? wg.cameraHint(P) : null;
@@ -1734,18 +1336,35 @@ function updatePlaying(dt) {
   const vTan = P.vel.clone().sub(vRad);
   const desired = moveDir.clone().multiplyScalar(moving ? P.speed * Math.min(1, inLen || 1) : 0);
   if (wg) desired.add(wg.drift(P.pos, P.grounded, up));
-  vTan.lerp(desired, P.grounded ? 0.28 : 0.06);
+  if (P.dashT > 0) { P.dashT -= dt; if (Math.random() < 0.5) Particles.spawn(P.pos.clone().addScaledVector(up, 0.8), 0xffa040, 2, 1); }
+  else vTan.lerp(desired, P.grounded ? 0.28 : 0.06);
 
   // punch: a short lunge, the hit lands partway through the swing
   if (punchQueued && P.punchT <= 0) {
-    P.punchT = PUNCH_TIME; P.punchHit = false;
+    P.punchT = PUNCH_TIME; P.punchHit = false; P.punchPower = false;
     P.punchDir.copy(projectTangent(moving ? moveDir : (P.face.lengthSq() ? P.face : camDir), up));
     if (wg) P.punchDir.copy(wg.aim(P, P.punchDir, up));
     P.face.copy(P.punchDir);
-    vTan.addScaledVector(P.punchDir, 3.5);
-    Audio.noise(0.1, 0.14);
+    if (ab && ab.tongue) Audio.tone(700, 0.12, "sine", 0.12, 1200);       // the tongue: no lunge
+    else { vTan.addScaledVector(P.punchDir, 3.5); Audio.noise(0.1, 0.14); }
   }
   punchQueued = false;
+  // power punch: once the glove is found (star 2), holding Punch charges and letting go smashes
+  const canPower = P.hasPower && !(wg && wg.avatar && wg.avatar());
+  if (canPower && punchHeld) P.charge += dt;
+  if (punchReleased) {
+    if (canPower && P.charge >= TUNE.power.charge) {
+      P.punchT = PUNCH_TIME; P.punchHit = false; P.punchPower = true;
+      P.punchDir.copy(projectTangent(moving ? moveDir : (P.face.lengthSq() ? P.face : camDir), up));
+      if (wg) P.punchDir.copy(wg.aim(P, P.punchDir, up));
+      P.face.copy(P.punchDir);
+      vTan.addScaledVector(P.punchDir, 6);
+      Audio.tone(140, 0.3, "sawtooth", 0.16, 60); Audio.noise(0.2, 0.2);
+      Particles.spawn(P.pos.clone().addScaledVector(up, 1).addScaledVector(P.punchDir, 0.8), 0xffa040, 16, 4);
+    }
+    P.charge = 0; punchReleased = false;
+  }
+  updateChargeGlow(dt);
 
   // jump, with a second jump in the air that comes back on landing
   P.coyote = P.grounded ? 0.1 : Math.max(0, P.coyote - dt);
@@ -1755,11 +1374,24 @@ function updatePlaying(dt) {
       vRad.copy(up).multiplyScalar(P.jump * jumpScale);
       P.grounded = false; P.coyote = 0; P.airJumps = 1;
       Audio.jump();
+    } else if (P.airJumps > 0 && ab && ab.flutter) {
+      // the dinosaur's flutter: a small hop, then hovering while the button is held (TUNE.flutter)
+      vRad.copy(up).multiplyScalar(Math.max(vRad.dot(up), P.jump * 0.35 * jumpScale));
+      P.airJumps--; P.flutterT = TUNE.flutter.time;
+      Audio.tone(520, 0.5, "triangle", 0.1, 760);
     } else if (P.airJumps > 0) {
       vRad.copy(up).multiplyScalar(P.jump * 0.92 * jumpScale);
       P.airJumps--;
       Audio.jump();
       Particles.spawn(P.pos.clone().addScaledVector(up, 0.3), 0xcfe8ff, 10, 2);
+    } else if (ab && ab.dash && !P.dashed) {
+      // star 4: a third press in the air dashes forward (TUNE.dash), once per jump
+      const dir = projectTangent(moving ? moveDir : (P.face.lengthSq() ? P.face : camDir), up);
+      vTan.copy(dir).multiplyScalar(TUNE.dash.speed);
+      vRad.copy(up).multiplyScalar(Math.max(vRad.dot(up), TUNE.dash.lift));
+      P.dashed = true; P.dashT = TUNE.dash.time; P.face.copy(dir);
+      Audio.tone(300, 0.3, "sawtooth", 0.12, 900);
+      Particles.spawn(P.pos.clone().addScaledVector(up, 0.8), 0xffc060, 14, 3);
     }
   }
   jumpQueued = false;
@@ -1767,6 +1399,13 @@ function updatePlaying(dt) {
   // gravity + integrate
   const prevPos = P.pos.clone();
   const prevH = prevPos.distanceTo(active.center) - active.radius;
+  if (P.flutterT > 0) {
+    if (jumpHeld && !P.grounded) {
+      P.flutterT -= dt;
+      vRad.addScaledVector(up, active.gravity * TUNE.flutter.lift * dt);
+      if (Math.random() < 0.3) Particles.spawn(P.pos.clone().addScaledVector(up, 0.4), 0xffffff, 2, 1);
+    } else P.flutterT = 0;
+  }
   vRad.addScaledVector(up, -active.gravity * dt);
   P.vel.copy(vTan).add(vRad);
   P.pos.addScaledVector(P.vel, dt);
@@ -1775,6 +1414,8 @@ function updatePlaying(dt) {
   let groundR = active.radius;
   if (wg) {
     let q = wg.query(P.pos, prevH);
+    // already inside something before this step (a respawn or a moving solid put him there): let him walk out
+    if (q.blocked && wg.query(prevPos, prevH).blocked) q.blocked = false;
     if (q.blocked) {                      // a wall: keep the height gained, undo the sideways step
       const keep = P.pos.distanceTo(active.center);
       P.pos.copy(active.center).addScaledVector(surfaceUp(prevPos, active), keep);
@@ -1795,7 +1436,7 @@ function updatePlaying(dt) {
       Particles.spawn(P.pos.clone().addScaledVector(newUp, 0.2), 0xffffff, 8, 1.6);
     }
     P.grounded = true;
-    P.airJumps = 1;
+    P.airJumps = 1; P.dashed = false; P.dashT = 0;
     P.up.copy(newUp);
 
     // spring pads
@@ -1908,6 +1549,8 @@ function updatePlaying(dt) {
       if (b.ShoulderR_025) b.ShoulderR_025.rotation.y = rest.ShoulderR_025.y + 1.6 - sw * 0.4;
     }
   }
+  // a character built in code as the player's look (star 3): tell it about jumps and punches
+  if (currentAvatar) Characters.drive(currentAvatar, { air: !P.grounded, punch: P.punchT > 0 ? Math.sin(clamp(1 - P.punchT / PUNCH_TIME, 0, 1) * Math.PI) : 0 });
 
   // punch timer; the hit resolves once, partway through the swing
   if (P.punchT > 0) {
@@ -1933,26 +1576,6 @@ function updatePlaying(dt) {
     if (P.pos.distanceTo(wp) < 1.9) startTransition(activeIndex + 1);
   }
 
-  // grand star
-  if (active.grand && active.grand.holder.visible && !active.grand.taken && active.collected >= active.total) {
-    const wp = active.center.clone().addScaledVector(active.grand.dir, active.radius + 2.2);
-    if (P.pos.distanceTo(wp) < 2.4) {
-      active.grand.taken = true;
-      active.grand.holder.visible = false;
-      Audio.victory();
-      Particles.spawn(wp, 0xffe08a, 60, 7);
-      Particles.spawn(wp, 0xffffff, 40, 4);
-      finishTime = performance.now() - startTime;
-      state = S.VICTORY;
-      setTimeout(() => {
-        const secs = Math.round(finishTime / 1000);
-        ui.timeText.textContent = "Journey time: " + Math.floor(secs / 60) + "m " + (secs % 60) + "s";
-        ui.victory.classList.remove("hidden");
-        ui.hud.classList.remove("on");
-      }, 1500);
-    }
-  }
-
   // damage blink
   if (P.invuln > 0) {
     P.invuln -= dt;
@@ -1961,15 +1584,14 @@ function updatePlaying(dt) {
 
   if (wg) wg.update(dt, wgFrame());
 
-  // last: the boss may restart the fight (re-landing Mario)
-  if (active.def.boss) updateBoss(dt);
 }
 
 // Camera floor: how high above the base sphere the first surface under `pos` is.
 // Wind Gardens answers from its real terrain (trench, canyon, planks, pedestal, balcony);
 // the other planets are plain spheres.
 function camFloorAt(pos) {
-  if (active.def.theme === "wind") return WindGardens.cameraFloor(pos);
+  const L = levelOf(active);
+  if (L) return L.cameraFloor(pos);
   return { floor: 0, h: pos.distanceTo(active.center) - active.radius };
 }
 // Fraction (0..1] of the segment a->b that is free of ground. Samples the segment and stops
@@ -1994,12 +1616,19 @@ function camPullIn(target, want, margin) {
   dirv.divideScalar(len);
   let free = len * camClearFraction(target, want, margin);
   if (free < len) blocked = true;
-  if (active.def.theme === "wind") {
+  const L = levelOf(active);
+  if (L && L.colliders.length) {
     camRay.set(target, dirv); camRay.far = len;
-    const hits = camRay.intersectObjects(WindGardens.colliders, true);
+    const hits = camRay.intersectObjects(L.colliders, true);
     if (hits.length && hits[0].distance - 0.8 < free) { free = hits[0].distance - 0.8; blocked = true; }
   }
-  if (blocked) want.copy(target).addScaledVector(dirv, Math.max(CAM_MIN_DIST, free));
+  if (blocked) {
+    want.copy(target).addScaledVector(dirv, Math.max(CAM_MIN_DIST, free));
+    // the minimum distance can still leave the camera in the ground (the hero knocked into a narrow
+    // pit by the trench wall): lift it straight up until it clears the surface under it
+    const f = camFloorAt(want);
+    if (f.h < f.floor + margin) want.addScaledVector(want.clone().sub(active.center).normalize(), f.floor + margin - f.h);
+  }
   return blocked;
 }
 
@@ -2021,7 +1650,7 @@ function updateCameraFollow(dt, extra) {
   camLookAhead += ((P.grounded || state !== S.PLAYING ? 0 : TUNE.camera.lookAhead) - camLookAhead) * Math.min(1, dt * 3);
   const target = P.pos.clone().addScaledVector(up, 1.0);
   // soft framing near the brake lever: back off and aim partly at the mill (WindGardens.cameraFocus)
-  const focus = (active.def.theme === "wind" && state === S.PLAYING) ? WindGardens.cameraFocus(P) : null;
+  const focus = (levelOf(active) && state === S.PLAYING) ? levelOf(active).cameraFocus(P) : null;
   camFocusW += ((focus ? focus.weight : 0) - camFocusW) * Math.min(1, dt * 1.8);
   if (focus) camFocusPt.copy(focus.point);
   const fe = camFocusW * camFocusW * (3 - 2 * camFocusW);
@@ -2052,7 +1681,7 @@ function updateCameraFollow(dt, extra) {
   camPullIn(target, camFollow, 0.3);
 
   // fixed shots for the mill climb and the rescue, with a smooth hand-back to the player
-  const shot = (active.def.theme === "wind" && state === S.PLAYING) ? WindGardens.cameraShot(P) : null;
+  const shot = (levelOf(active) && state === S.PLAYING) ? levelOf(active).cameraShot(P) : null;
   if (shot) { camShotPos.copy(shot.pos); camShotLook.copy(shot.look); camShotKind = shot.kind; }
   else if (camShotKind) {
     // hand back from where the camera is now, so the follow camera does not swing around
@@ -2070,10 +1699,13 @@ function updateCameraFollow(dt, extra) {
     camPullIn(look, camera.position, 0.3);
   } else camera.position.copy(camFollow);
 
+  // shake the aim, not the camera: moving the camera itself could push it into the ground or a wall
+  // right after the pull-in above made it clear (that was the flaky trench case in tools/camera-check.js)
   if (camShake > 0) {
-    camera.position.x += (Math.random() - 0.5) * camShake;
-    camera.position.y += (Math.random() - 0.5) * camShake;
-    camera.position.z += (Math.random() - 0.5) * camShake;
+    const k = camShake * Math.max(1, camera.position.distanceTo(look) / 6);
+    look.x += (Math.random() - 0.5) * k;
+    look.y += (Math.random() - 0.5) * k;
+    look.z += (Math.random() - 0.5) * k;
     camShake = Math.max(0, camShake - dt * 1.6);
   }
   camera.up.copy(camUp);
@@ -2102,18 +1734,63 @@ function updateTransition(dt) {
     P.up.copy(targetUp);
     camUp.lerp(targetUp, Math.min(1, dt * 3)).normalize();
     const camWant = pos.clone().addScaledVector(dir, -11).addScaledVector(camUp, 3.5);
-    camera.position.lerp(camWant, Math.min(1, dt * 4));
+    const close = tr.ambush && tr.ambush.stage >= 1 && tr.ambush.stage < 4;     // keep up with the hero while the villain strikes
+    camera.position.lerp(camWant, Math.min(1, dt * (close ? 12 : 4)));
     camera.up.copy(camUp);
     camera.lookAt(pos);
   }
 
+  if (tr.ambush) updateAmbush(tr, k, pos, dt);
+
   if (k >= 1) {
     transition = null;
+    villain.g.visible = false; villainPaint.visible = false;
     landOnPlanet(tr.next, tr.endDir);
     state = S.PLAYING;
     toast("Welcome to " + active.name);
     if (active.springs.length) hint("The purple pads bounce you high.\nFollow the beams of light to the shards.", 6000);
     Particles.spawn(P.pos, 0xffffff, 24, 4);
+  }
+}
+
+// The young villain's ambush on the flight out of star 2 (game-design/four-planets.md: he aims the
+// brush straight at the hero). He flies in beside the hero, throws a blob of paint that hits, and
+// leaves; the hero stays painted (a purple glow) as the opening of star 3.
+const villain = BasaltMines.makeVillain(scene);
+villain.g.visible = false;
+const villainPaint = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 10), new THREE.MeshBasicMaterial({ color: 0xb050ff }));
+villainPaint.visible = false; scene.add(villainPaint);
+function updateAmbush(tr, k, pos, dt) {
+  const a = tr.ambush;
+  const fwd = tr.c.clone().sub(tr.a).normalize();
+  const side = new THREE.Vector3().crossVectors(fwd, P.up).normalize();
+  const spot = pos.clone().addScaledVector(side, 5.5).addScaledVector(P.up, 2.2).addScaledVector(fwd, 3);
+  if (a.stage === 0 && k > 0.25) {
+    a.stage = 1; villain.g.visible = true; villain.g.position.copy(spot).addScaledVector(P.up, 14);
+    Audio.roar(); toast("The young villain!", 2000);
+  }
+  if (a.stage >= 1 && a.stage < 4) {
+    villain.g.position.lerp(spot, Math.min(1, dt * 4));
+    villain.g.up.copy(P.up); villain.g.lookAt(pos);
+    villain.brush.rotation.x = -1.2;
+  }
+  if (a.stage === 1 && k > 0.42) { a.stage = 2; a.t = 0; villainPaint.visible = true; Audio.fire(); }
+  if (a.stage === 2) {
+    a.t += dt;
+    const from = villain.tip.getWorldPosition(new THREE.Vector3());
+    villainPaint.position.copy(from).lerp(pos.clone().addScaledVector(P.up, 0.9), Math.min(1, a.t / 0.45));
+    if (a.t >= 0.45) {
+      a.stage = 3; villainPaint.visible = false; P.painted = true;
+      Particles.spawn(pos.clone().addScaledVector(P.up, 0.9), 0xb050ff, 40, 5);
+      Audio.boom(); camShake = 0.5; Audio.hurt();
+      toast("Splat! His paint hit Mario!", 2600);
+      hint("The young villain's paint... Mario feels strange.\n(To be continued in star 3: the Ink Swamp.)", 7000);
+    }
+  }
+  if (a.stage === 3 && k > 0.62) a.stage = 4;
+  if (a.stage === 4) {
+    villain.g.position.addScaledVector(P.up, dt * 18).addScaledVector(side, dt * 10);
+    if (k > 0.85) villain.g.visible = false;
   }
 }
 
@@ -2164,6 +1841,9 @@ function animate() {
   else if (state === S.VICTORY) updateCameraFollow(dt, 9);
 
   Particles.update(dt);
+  Models.update(dt);
+  updateAvatar();
+  Characters.update(dt);
   Audio.update();
   starfield.position.copy(camera.position);
   updatePlanetDetail();
@@ -2190,11 +1870,11 @@ const heroShadow = (() => {
 })();
 const _hsUp = new THREE.Vector3(), _hsQ = new THREE.Quaternion(), _hsZ = new THREE.Vector3(0, 0, 1);
 function updateHeroShadow() {
-  const show = state === S.PLAYING && active && active.def.theme === "wind" && player.visible && !P.climbing;
+  const show = state === S.PLAYING && levelOf(active) && player.visible && !P.climbing;
   heroShadow.visible = !!show;
   if (!show) return;
   _hsUp.copy(P.pos).sub(active.center);
-  const f = WindGardens.cameraFloor(P.pos);
+  const f = levelOf(active).cameraFloor(P.pos);
   const above = f.h - f.floor;
   if (!isFinite(f.floor) || above > 14) { heroShadow.visible = false; return; }
   _hsUp.normalize();
@@ -2219,8 +1899,15 @@ function heroNightGlow() {
     }); });
   }
   const night = (GameShared.sky && GameShared.sky.night) || 0;
-  const k = active.def.theme === "wind" ? 0.28 * night : 0;
-  for (const m of heroMats) m.emissiveIntensity = k;
+  const k = levelOf(active) ? 0.28 * night : 0;
+  // painted by the young villain: a purple glow over his own texture
+  const paint = P.painted ? 0.42 + 0.1 * Math.sin(clock.elapsedTime * 3) : 0;
+  for (const m of heroMats) {
+    const wantMap = paint ? null : (m.map || null);       // a flat purple, not purple times his texture
+    if (m.emissiveMap !== wantMap) { m.emissiveMap = wantMap; m.needsUpdate = true; }
+    if (paint) { m.emissive.setHex(0x9a3cff); m.emissiveIntensity = paint; }
+    else { if (m.map) m.emissive.setHex(0xffffff); m.emissiveIntensity = k; }
+  }
 }
 
 // ---------- buttons ----------
@@ -2248,14 +1935,20 @@ landOnPlanet(0);
 state = S.MENU;
 // test/QA access (see docs/wind-gardens.md)
 let dbgPause = false;
-window.__dbg = { P, camera, camDir, WindGardens, QUALITY, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },
+window.__dbg = { P, camera, get camDir() { return camDir; }, WindGardens, BasaltMines, InkSwamp, FurnaceMoon, QUALITY, Models, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },
   get ready() { return !!player.userData.ready; },
   // place the hero at route coordinates (s, l, height above the base sphere), facing +s
   place(s, l, h, back) {
-    const wp = WindGardens.debug.worldPos(s, l || 0, h || 0);
-    teleportPlayer(wp, WindGardens.debug.worldPos(s + (back ? -5 : 5), l || 0, h || 0).sub(wp));
+    const L = levelOf(active) || WindGardens;
+    const wp = L.debug.worldPos(s, l || 0, h || 0);
+    teleportPlayer(wp, L.debug.worldPos(s + (back ? -5 : 5), l || 0, h || 0).sub(wp));
     P.grounded = false;
   },
+  // land on a planet by index (QA: start a test on star 2 without the launch)
+  goTo(i) { transition = null; landOnPlanet(i); state = S.PLAYING; },
+  powerPunch() { P.charge = TUNE.power.charge + 0.01; punchReleased = true; },
+  setJumpHeld(v) { jumpHeld = !!v; },
+  get painted() { return P.painted; }, get transition() { return transition && { k: transition.t / transition.dur, ambush: transition.ambush && transition.ambush.stage }; },
   get health() { return P.health; }, set health(v) { P.health = v; },
   setInvuln(v) { P.invuln = v; },
   setCam(pitch, zoom) { if (pitch !== undefined) camPitch = pitch; if (zoom !== undefined) camZoom = zoom; },
