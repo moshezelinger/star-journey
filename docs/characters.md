@@ -22,6 +22,8 @@ Moshe's decision (21.11.2026): the characters are improved with what the game al
 | Ink squid | `inkSquid()` | star 3 | indigo mantle fading to lavender, fins, glowing lilac spots, sleepy purple eyes, eight tentacles that pulse | `g` (the level scales it before it spits) |
 | Swamp snapper | `swampSnapper()` | star 3 (`?models=code`) | a flytrap: two jaws with cream teeth, plum outside, pink inside, eyes on stalks, broad leaves; the jaws open wide when the level bends the stem back | `g`, `stem`, `dazed` |
 
+Star 4 (`js/furnace-moon.js`) uses the same builders: the brother with his lit lantern, the young villain (with a paint splash on his head that covers his eyes when a ball comes back, `paint`), and the big ape, the dinosaur and the mushroom friend as the friends locked in the cages (their installed models by default, like on stars 2 and 3).
+
 The hero and Bowser keep their models. The big ape, the dinosaur, the mushroom friend and the swamp plant show the models already installed by default; `index.html?models=code` shows the code versions of all of them (the hero keeps his model).
 
 ## How a character is built

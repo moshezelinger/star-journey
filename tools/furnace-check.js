@@ -298,6 +298,21 @@ const H = require("./harness");
   await ev(() => window.__dbg.setCam(0.38, 9.15));
   c.ok("camera stays above the ground and within zoom (27 spots)", camFails.length === 0, camFails);
 
+  // a decorative rock near the walkable belt blocks the hero (issue #20: walking through trees)
+  r = await ev(([idx, name, getter]) => {
+    const d = window.__dbg, dbg = d[name].debug;
+    d.goTo(idx); d.step(5);
+    const list = dbg[getter]().filter(t => Math.abs(t.cl ) < dbg.layout.edgeL - 2 && t.r > 0.5 && t.top - dbg.terrainH(t.cs, t.cl) > 1.2).sort((a, b) => b.r - a.r);
+    const t = list[0];
+    if (!t) return { none: true };
+    const ts = t.cs , tl = t.cl ;
+    const start = ts - t.r - 2.5;
+    d.place(start, tl, Math.max(0.3, dbg.terrainH(start, tl) + 0.3)); d.step(20);
+    d.keys.KeyW = true; d.step(90); d.keys.KeyW = false;
+    const c = dbg.coordsOf(d.P.pos);
+    return { count: list.length, r: +t.r.toFixed(2), gap: +(Math.hypot(c.s - ts, c.l - tl) - t.r).toFixed(2), passed: c.s > ts + t.r };
+  }, [3, "FurnaceMoon", "rockColliders"]);
+  c.ok("a big rock blocks the way", !r.none && r.gap > -0.15 && !r.passed, r);
   c.ok("no page errors", h.errors.length === 0, h.errors);
   const failed = c.report();
   await h.close();

@@ -64,7 +64,7 @@ Measured in headless Chromium with software rendering (draw calls and triangles;
 | Star 2 junction | 76 | 189 thousand | 179 thousand |
 | Star 2 chamber | 50 | 189 thousand | 178 thousand |
 
-The ground is one fine strip (0.6 units along the route, finer near it across) shaped by the same `terrainH` as the physics; trees, ferns, basalt columns and rail sleepers are instanced; every static part with a shared material is merged (`mergeStatic`). `?fx=-jungle` turns off the trees and ferns.
+The ground is one fine strip (0.6 units along the route, finer near it across) shaped by the same `terrainH` as the physics; trees, ferns, basalt columns and rail sleepers are instanced; every static part with a shared material is merged (`mergeStatic`). `?fx=-jungle` turns off the trees and ferns. Trees within reach of the walkable belt have a round trunk collider (in buckets along `s`); trees right next to a coin get none.
 
 ## Test hooks and scripts
 

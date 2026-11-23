@@ -123,12 +123,35 @@ const InkSwamp = (() => {
     return s >= o.s0 && s <= o.s1 && l >= o.l0 && l <= o.l1;
   }
   const _u = new V3();
+  // ---- tree trunks: decorative trees near the walkable belt block like the other solids ----
+  // (issue #20: the dinosaur used to walk through them). Kept in buckets along s, so a query only
+  // looks at the trees around it. Trees right next to a coin get no collider, so a coin is never blocked.
+  const treeGrid = new Map(), TREE_CELL = 4;
+  let treeList = [];
+  function registerTrees(trunkR, reachL, coinSpots) {
+    treeGrid.clear();
+    for (const t of treeList) {
+      if (Math.abs(t.l) > reachL) continue;
+      const r = trunkR * t.k;
+      if (coinSpots.some(c => Math.hypot(c.s - t.s, c.l - t.l) < r + 1.4)) continue;
+      const key = Math.floor(t.s / TREE_CELL);
+      if (!treeGrid.has(key)) treeGrid.set(key, []);
+      treeGrid.get(key).push({ s: t.s, l: t.l, r });
+    }
+  }
+  function treeAt(s, l) {
+    const key = Math.floor(s / TREE_CELL);
+    for (let d = -1; d <= 1; d++) { const b = treeGrid.get(key + d); if (b) for (const t of b) if (Math.hypot(s - t.s, l - t.l) < t.r) return true; }
+    return false;
+  }
+
   function query(pos, curH) {
     _u.copy(pos).sub(center).normalize();
     const c = coordsOf(_u);
     let ground = terrainH(c.s, c.l), blocked = false;
     let isVoid = ground < LAYOUT.voidBelow;
     if (ground > curH + STEP) blocked = true;
+    if (treeAt(c.s, c.l)) blocked = true;
     for (const o of solids) {
       if (o.gone || !inFoot(o, c.s, c.l)) continue;
       if (o.top <= curH + STEP) { if (isVoid || o.top > ground) { ground = o.top; isVoid = false; } }
@@ -271,6 +294,7 @@ const InkSwamp = (() => {
       if (Math.abs(l) < 3.5) continue;
       reeds.push({ s, l, h: terrainH(s, l) - 0.1, k: 0.7 + rand() * 0.6, ky: 1 + rand(), rot: rand() * 6.28 });
     }
+    treeList = trees;
     const trunkG = new THREE.CylinderGeometry(0.35, 0.7, 5, 7); trunkG.translate(0, 2.5, 0);
     const crownG = new THREE.IcosahedronGeometry(2.2, 0); crownG.scale(1.3, 0.55, 1.3); crownG.translate(0, 5.4, 0);
     const mossG = new THREE.ConeGeometry(1.6, 2.2, 6, 1, true); mossG.rotateX(Math.PI); mossG.translate(0, 4.2, 0);
@@ -477,6 +501,7 @@ const InkSwamp = (() => {
     buildProps();
     buildCoins();
     buildFootprints();
+    registerTrees(0.55, LAYOUT.edgeL + 2, coins);
     buildCharacters();
     const keep = [S.bridgeMesh, S.raft, S.held, yoshiNpc, toad, mario, squid, S.inkBlob]
       .concat(S.stoneMeshes.map(m => m.g), S.huts.map(h => h.g), S.huts.map(h => h.lever), S.bedShrooms.map(b => b.g), S.trunkMeshes, coins.map(c => c.holder), piranhas.map(p => p.g));
@@ -944,6 +969,7 @@ const InkSwamp = (() => {
 
   const debug = {
     get state() { return S; }, layout: LAYOUT,
+    treeColliders() { const out = []; for (const b of treeGrid.values()) out.push(...b); return out; }, treeAt,
     coordsOf: (p) => coordsAt(p), worldPos, dirAt, query, terrainH,
     get mounted() { return S.mounted; }, mount() { S.mounted = true; yoshiNpc.visible = false; },
     get coins() { return S.coins; }, get rescued() { return S.rescued; }, get rescueCount() { return S.rescueCount; },

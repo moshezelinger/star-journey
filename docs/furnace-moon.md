@@ -26,17 +26,19 @@ Checkpoints: `landing` 0, `shore` 44, `arena` 59, `crater` 86. Falling into lava
   - The mushroom friend marks the orange mushroom that guards from fire (once the crater is lit).
   - The dinosaur pulls the marked mushroom over the lava with his tongue (once it is marked) and leaves it on the near bank. It grows back 4 s after being eaten.
   - The big ape lifts three stone slabs. 9 coins under them unlock the **dash**.
-- **The last round** (all four free): a ring of fire surrounds him. It hurts without the fire mushroom (20 s of protection). He only slams now, and pants for 1.9 s after each slam (dizzy stars). Only a dash into him during that pause beats him; walking into him does not.
+- **The last round** (all four free): a ring of fire surrounds him. It hurts without the fire mushroom (20 s of protection). He only slams now, and pants for 2.4 s after each slam (dizzy stars). Only a dash into him during that pause beats him; walking into him does not. A dash counts until the hero lands, so one that ran out of speed just before reaching him still hits.
 
 ## Abilities added on this star
 
-- **Deflect punch:** a punch within reach of a paint ball rolling at the hero sends it back to the young villain. The level handles it inside `punchHit`.
+- **Deflect punch:** a punch within 3.4 units of a paint ball rolling at the hero sends it back to the young villain. The level handles it inside `punchHit`.
 - **Dash** (`TUNE.dash`, in `index.html`): once unlocked, a third press of jump in the air (after the double jump) throws the hero forward at 20 units/s for 0.45 s, once per jump. A level turns it on by returning `{ dash: true }` from `abilities()`. While a dash runs, `P.dashT > 0`.
 - **The end of the journey:** the level calls `env.win()`, which opens the victory screen (`finishJourney` in `index.html`). The old grand star is gone.
 
 ## Characters
 
-Installed: the villain (Bowser, the same file the old boss used, now loaded through `Models` with a `strip` option that drops a stray helper mesh), the big ape, the dinosaur and the mushroom friend. Still stand-ins: the brother and the young villain (Bowser Jr.); see issue #19. The villain's model has no animation clips, so he moves as a whole (lean, crouch, jump).
+Following `docs/characters.md`: the brother (with his lit lantern) and the young villain are built in code (`js/characters.js`); the young villain gets a paint splash on his head for the moment the ball comes back. The big ape, the dinosaur and the mushroom friend show their installed models, with the code versions under `?models=code`. Bowser is the same model the old boss used, now loaded through `Models` with a `strip` option that drops a stray helper mesh. His file has no animation clips, so he moves as a whole (lean, crouch, jump).
+
+The scattered basalt rocks near the walkable belt are solid (in buckets along `s`, low ones can be jumped onto); none sit at the bridge ends, by the shore coins or at the shrine.
 
 ## Performance
 
@@ -48,8 +50,11 @@ Headless Chromium, software rendering, `node tools/furnace-perf.js`: landing 134
 
 Not tested: real devices, touch, frame rate, a child.
 
-## Open questions for Moshe
+## Decisions (23.11.2026, Moshe asked not to wait on questions)
 
-- Is the deflect timing (punch within about 3 units of the ball) easy enough for ages 7 to 8?
-- Should the last round need the dash, as now, or should any punch during his pause count as well?
-- The fire mushroom guards for 20 s. Too long, too short?
+- The deflect window is 3.4 units in front of the hero (was 3), a little easier for ages 7 to 8.
+- The last blow still needs the dash, because the story makes it the reward of the coins; the pause after the slam is longer (2.4 s, was 1.9) and the reach is 3.2 units.
+- The fire mushroom guards for 20 s and grows back 4 s after it is eaten.
+- On screen he is "the young villain", as on star 2.
+
+All four are numbers in `js/furnace-moon.js` and easy to change after a play session.

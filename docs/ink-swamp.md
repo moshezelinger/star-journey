@@ -37,7 +37,7 @@ Coins collected here count toward the ferry (10 needed) and are also added to `P
 
 ## Performance
 
-Headless Chromium, software rendering: landing 160 draw calls and 305 thousand triangles, lake 152 / 304 thousand, pond 80 / 183 thousand, arena 35 / 178 thousand. Mushroom caps were reduced from 10x6 to 8x3 segments to get there (they were 346 thousand). `?fx=-jungle` turns the trees and mushrooms off.
+Headless Chromium, software rendering: landing 160 draw calls and 305 thousand triangles, lake 152 / 304 thousand, pond 80 / 183 thousand, arena 35 / 178 thousand. Mushroom caps were reduced from 10x6 to 8x3 segments to get there (they were 346 thousand). `?fx=-jungle` turns the trees and mushrooms off. Trees within reach of the walkable belt have a round trunk collider (in buckets along `s`), so the dinosaur no longer walks through them; trees right next to a coin get none.
 
 ## Tests
 

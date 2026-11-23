@@ -124,6 +124,18 @@ const FurnaceMoon = (() => {
   const slabSolids = L0.slabs.map(sl => addSolid({ s0: sl.s - 1.5, s1: sl.s + 1.5, l0: sl.l - 1.5, l1: sl.l + 1.5, bottom: -1, top: 0.55 }));
   const shrineSolid = addSolid({ cs: L0.shrine.s, cl: L0.shrine.l, r: 0.9, bottom: -1, top: 1.2 });
 
+  // the scattered basalt rocks near the walkable belt: low solids in buckets along s (filled in buildRocks)
+  const rockGrid = new Map(), ROCK_CELL = 4;
+  function addRock(s, l, r, top) {
+    const key = Math.floor(s / ROCK_CELL);
+    if (!rockGrid.has(key)) rockGrid.set(key, []);
+    rockGrid.get(key).push({ cs: s, cl: l, r, top, bottom: -1 });
+  }
+  function rocksNear(s, fn) {
+    const key = Math.floor(s / ROCK_CELL);
+    for (let d = -1; d <= 1; d++) { const b = rockGrid.get(key + d); if (b) for (const o of b) fn(o); }
+  }
+
   const STEP = 0.65;
   function inFoot(o, s, l) {
     if (o.r !== undefined) return Math.hypot(s - o.cs, l - o.cl) < o.r;
@@ -141,12 +153,18 @@ const FurnaceMoon = (() => {
       if (o.top <= curH + STEP) { if (isVoid || o.top > ground) { ground = o.top; isVoid = false; } }
       else if (o.bottom < curH + 1.6) blocked = true;
     }
+    rocksNear(c.s, (o) => {
+      if (!inFoot(o, c.s, c.l)) return;
+      if (o.top <= curH + STEP) { if (o.top > ground) ground = o.top; }
+      else blocked = true;
+    });
     return { radius: isVoid ? -Infinity : R + ground, blocked, s: c.s, l: c.l, void: isVoid };
   }
   // the surface under a spot, solids included (for "is he on the ground" checks of waves and balls)
   function floorAt(s, l, h) {
     let f = terrainH(s, l);
     for (const o of solids) if (!o.gone && o.top <= h + 0.3 && o.top > f && inFoot(o, s, l)) f = o.top;
+    rocksNear(s, (o) => { if (o.top <= h + 0.3 && o.top > f && inFoot(o, s, l)) f = o.top; });
     return f;
   }
   function drift() { return new V3(); }
@@ -293,7 +311,12 @@ const FurnaceMoon = (() => {
       if (Math.abs(l) < 6 || lavaDepth(s, l) > 0.05) continue;
       if (s > 84 && s < 126 && Math.abs(l) < 26) continue;          // keep fight 2 and the shaded crater clear
       if (s > 58 && s < 82 && Math.abs(l) < 10) continue;
-      rocks.push({ s, l, h: terrainH(s, l) - 0.15, k: 0.4 + Math.pow(rand(), 2.5) * 2.2, ky: 0.6 + rand() * 0.8, rot: rand() * 6.28 });
+      const L = LAYOUT;                                            // keep the bridge ends, the coins and the shrine free
+      if (s > L.lake.s0 - 5 && s < L.lake.s1 + 5 && L.bridges.some(b => Math.abs(l - b.l) < 3.5)) continue;
+      if (L.shoreCoins.some(c => Math.hypot(c[0] - s, c[1] - l) < 3.5) || Math.hypot(L.shrine.s - s, L.shrine.l - l) < 4) continue;
+      const rk = { s, l, h: terrainH(s, l) - 0.15, k: 0.4 + Math.pow(rand(), 2.5) * 2.2, ky: 0.6 + rand() * 0.8, rot: rand() * 6.28 };
+      rocks.push(rk);
+      if (Math.abs(l) < LAYOUT.edgeL + 2 && rk.k > 0.6) addRock(s, l, 0.7 * rk.k, rk.h + 1.2 * rk.k * rk.ky);   // pebbles stay walkable
     }
     for (let i = 0; i < 400 && vents.length < 40; i++) {
       const s = -10 + rand() * 150, l = (rand() * 2 - 1) * 40;
@@ -469,23 +492,13 @@ const FurnaceMoon = (() => {
     parent.add(stand);
     return Models.load(id, parent, stand, opts);
   }
-  function eyes(parent, y, z, r, gap) {
-    for (const x of [-gap, gap]) { const e = add(parent, ball(r, 0xfffaf0, { flatShading: false }, 10, 8), x, y, z); add(e, ball(r * 0.5, 0x1a1420, { flatShading: false }, 8, 6), 0, 0, r * 0.7); }
-  }
+  // the young villain built in code (js/characters.js), with a splash of paint that covers his eyes when a ball comes back
   function makeJr() {
-    const g = new THREE.Group();
-    add(g, ball(0.5, 0xe0c040, { flatShading: false }), 0, 0.6, 0).scale.set(1, 1.05, 0.95);
-    add(g, ball(0.42, 0x3f8a3a, { flatShading: false }), 0, 0.65, -0.3);
-    add(g, ball(0.42, 0xe8d060, { flatShading: false }), 0, 1.35, 0.05);
-    add(g, box(0.5, 0.35, 0.12, 0xffffff), 0, 0.85, 0.45);
-    add(g, cyl(0.06, 0.22, 0.3, 6, 0xff7a20), 0, 1.78, -0.05);
-    eyes(g, 1.45, 0.36, 0.08, 0.14);
-    const brush = new THREE.Group(); brush.position.set(0.55, 1.0, 0.1); g.add(brush);
-    add(brush, cyl(0.06, 0.06, 1.6, 6, 0x8a5a30), 0, 0.6, 0);
-    add(brush, ball(0.2, 0xb050ff, { emissive: 0x8020ff, emissiveIntensity: 0.6 }, 10, 8), 0, 1.45, 0).scale.set(1, 1.5, 1);
-    const paint = add(g, new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 8), new THREE.MeshBasicMaterial({ color: 0xb040ff })), 0, 1.45, 0.22);
-    paint.scale.set(1.2, 0.55, 0.6); paint.visible = false;
-    return { g, brush, paint };
+    const v = Characters.youngVillain();
+    const paint = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 8), new THREE.MeshBasicMaterial({ color: 0xb040ff }));
+    paint.position.set(0, 0.08, 0.2); paint.scale.set(1.35, 0.6, 0.55); paint.visible = false;
+    v.head.add(paint);
+    return { g: v.g, brush: v.brush, tip: v.tip, paint };
   }
   function makeBowserStand() {
     const g = new THREE.Group();
@@ -496,51 +509,23 @@ const FurnaceMoon = (() => {
     add(g, new THREE.Mesh(kitGeometry("hair", () => new THREE.ConeGeometry(0.5, 0.9, 6)), kitMaterial(0xe0442c)), 0, 3.9, 0.05).rotation.x = -0.6;
     return g;
   }
-  function makeLuigiStand() {
-    const g = new THREE.Group();
-    add(g, box(0.55, 0.7, 0.4, 0x2a4fd0), 0, 0.45, 0);
-    add(g, box(0.62, 0.55, 0.42, 0x2eaa4a), 0, 1.05, 0);
-    add(g, ball(0.27, 0xffc79a, { flatShading: false }), 0, 1.5, 0);
-    add(g, cyl(0.29, 0.29, 0.16, 12, 0x2eaa4a), 0, 1.72, 0);
-    return g;
-  }
-  function makeYoshiStand() {
-    const g = new THREE.Group();
-    add(g, ball(0.6, 0x4ac040, { flatShading: false }), 0, 0.9, 0).scale.set(0.9, 1, 1.2);
-    add(g, ball(0.42, 0x4ac040, { flatShading: false }), 0, 1.6, 0.55);
-    eyes(g, 1.85, 0.6, 0.12, 0.14);
-    return g;
-  }
-  function makeToadStand() {
-    const g = new THREE.Group();
-    add(g, ball(0.6, 0xffffff, { flatShading: false }), 0, 1.1, 0).scale.set(1, 0.75, 1);
-    add(g, ball(0.28, 0xffd9b0, { flatShading: false }), 0, 0.65, 0.05); add(g, box(0.45, 0.4, 0.3, 0x2a4fd0), 0, 0.25, 0);
-    return g;
-  }
-  function makeDKStand() {
-    const g = new THREE.Group();
-    add(g, ball(0.9, 0x6a3a1a), 0, 1.4, 0).scale.set(1.1, 1, 0.9);
-    add(g, ball(0.55, 0x6a3a1a), 0, 2.5, 0.2);
-    add(g, box(0.5, 0.3, 0.1, 0xd02020), 0, 1.5, 0.8);
-    return g;
-  }
   let jr = null, bowser = null;
   const friends = {};
   function buildCharacters() {
-    jr = makeJr(); jr.model = withModel("bowserjr", jr.g, [jr.brush, jr.paint]); group.add(jr.g);
+    jr = makeJr(); jr.model = withModel("bowserjr", jr.g, [jr.brush]); group.add(jr.g);
     bowser = new THREE.Group(); const bi = new THREE.Group(); bowser.add(bi); bi.add(makeBowserStand());
     bowser.inner = bi; bowser.model = withModel("bowser", bi, []);
     S.mouthGlow = add(bowser, glowMesh(new THREE.SphereGeometry(0.6, 10, 8), 0xff6020, 0), 0, 3.1, 1.2);
     S.dizzy = add(bowser, new THREE.Group(), 0, 4.6, 0);
     for (let k = 0; k < 3; k++) add(S.dizzy, glowMesh(new THREE.OctahedronGeometry(0.25, 0), 0xffe060, 0.9), Math.cos(k * 2.1) * 0.9, 0, Math.sin(k * 2.1) * 0.9);
     group.add(bowser);
+    // the friends are built in code (js/characters.js); an installed model shows instead where there is one
     const mk = (id, stand) => { const g = new THREE.Group(); g.add(stand); g.model = withModel(id, g, []); group.add(g); return g; };
-    friends.luigi = mk("luigi", makeLuigiStand());
-    friends.yoshi = mk("yoshi", makeYoshiStand());
-    friends.toad = mk("toad", makeToadStand());
-    friends.dk = mk("dk", makeDKStand());
-    S.lantern = glowMesh(new THREE.SphereGeometry(0.22, 10, 8), 0xfff0a0, 0.9);
-    S.lantern.position.set(0.35, 1.2, 0.35); friends.luigi.add(S.lantern);
+    const bro = Characters.brother({ height: 1.8, lantern: true, lit: true });
+    friends.luigi = mk("luigi", bro.g);
+    friends.yoshi = mk("yoshi", Characters.dinosaur().g);
+    friends.toad = mk("toad", Characters.mushroomFriend().g);
+    friends.dk = mk("dk", Characters.bigApe().g);
     S.tongue = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1, 8), new THREE.MeshStandardMaterial({ color: 0xff5a8a, roughness: 0.4 }));
     S.tongue.geometry.translate(0, 0.5, 0); S.tongue.geometry.rotateX(Math.PI / 2);
     S.tongue.position.set(0, 1.5, 0.8); S.tongue.visible = false; friends.yoshi.add(S.tongue);
@@ -767,7 +752,7 @@ const FurnaceMoon = (() => {
       } else jr.brush.rotation.x = 0;
       if (hs > L.slope.s1 + 0.5) {
         J.phase = "fly"; J.state = "fly"; J.t = 0; J.fs = J.s; J.fl = J.l; J.fh = J.h;
-        ctx.toast("Bowser Jr.: \"Catch me if you can!\"", 2400);
+        ctx.toast("The young villain: \"Catch me if you can!\"", 2400);
         once("bridges", ctx, "He painted three bridges over the lava...\nbut which one is real? Look at the lava.", 8000);
       }
       return;
@@ -785,9 +770,9 @@ const FurnaceMoon = (() => {
         J.s = P0.s; J.l = P0.l; J.h = P0.top;
         placeAt(jr.g, J.s, J.l, J.h, hs, hl);
         jr.g.position.addScaledVector(jr.g.position.clone().normalize(), Math.abs(Math.sin(S.t * 4)) * 0.15);
-        if (hs > 58 && S.hasDeflect) { J.state = "idle"; J.t = 0; split("fight1"); ctx.toast("Bowser Jr.!", 1600);
+        if (hs > 58 && S.hasDeflect) { J.state = "idle"; J.t = 0; split("fight1"); ctx.toast("The young villain!", 1600);
           ctx.hint("Wait until he swings his brush.\nPunch the paint ball back just before it reaches you!", 9000); }
-        else if (hs > 58 && !S.hasDeflect) once("needDeflect", ctx, "Bowser Jr.: \"Ha! You can't touch me up here!\"\nThe shrine by the shore sells something useful.", 6000);
+        else if (hs > 58 && !S.hasDeflect) once("needDeflect", ctx, "The young villain: \"Ha! You can't touch me up here!\"\nThe shrine by the shore sells something useful.", 6000);
         return;
       }
       if (J.state === "idle") {
@@ -839,7 +824,7 @@ const FurnaceMoon = (() => {
       S.balls.length = 0;
       wallSolid.gone = true; S.wall.visible = false;
       split("jr");
-      ctx.toast("Bowser Jr.: \"Papa! Papaaa!\"", 2600);
+      ctx.toast("The young villain: \"Papa! Papaaa!\"", 2600);
       ctx.hint("The paint wall is gone. Something big is coming...", 5000);
       S.introT = 0;   // his father arrives at the other side of the crater
     } else ctx.toast(J.hp === 2 ? "Got him! Two more." : "One more!", 1400);
@@ -996,7 +981,7 @@ const FurnaceMoon = (() => {
       face(hs, hl);
       S.dizzy.visible = S.final; S.dizzy.rotation.y = S.t * 4;
       bowser.inner.rotation.x = 0.2;
-      if (Bw.t > (S.final ? 1.9 : 1.0)) { Bw.state = "idle"; Bw.t = 0; }
+      if (Bw.t > (S.final ? 2.4 : 1.0)) { Bw.state = "idle"; Bw.t = 0; }
     }
   }
   function updateWave(dt, ctx, hs, hl, hh) {
@@ -1024,7 +1009,7 @@ const FurnaceMoon = (() => {
       luigi: "Luigi: \"Thanks, bro! It's so dark over there... let me light it up.\"",
       toad: "Toad: \"Free! I know my mushrooms. Let me find the one that guards from fire.\"",
       yoshi: "Yoshi: \"Yoshi!\" (his tongue reaches far, even over the lava)",
-      dk: "Donkey Kong: \"Ooh ooh!\" He looks at the heavy stone slabs..."
+      dk: "DK: \"Ooh ooh!\" He looks at the heavy stone slabs..."
     };
     ctx.hint(lines[c.who] + (Object.keys(S.freed).length < 4 ? "\nBowser is angrier now. Free the next friend!" : ""), 7000);
     if (Object.keys(S.freed).length === 4) startFinal(ctx);
@@ -1133,8 +1118,9 @@ const FurnaceMoon = (() => {
   function updateFinalHit(P, ctx, hs, hl, hh) {
     const Bw = S.bowser;
     if (!S.final || S.beaten) return;
-    const d = dist(hs, hl, Bw.s, Bw.l), dashing = P.dashT > 0;
-    if (d < 2.8 && hh - terrainH(Bw.s, Bw.l) < 4.5) {
+    // a dash counts until the hero lands, so one that just ran out of speed on the way in still hits
+    const d = dist(hs, hl, Bw.s, Bw.l), dashing = P.dashT > 0 || (P.dashed && !P.grounded);
+    if (d < 3.2 && hh - terrainH(Bw.s, Bw.l) < 4.5) {
       if (dashing && Bw.state === "recover") { beatBowser(ctx); return; }
       if (Bw.state === "recover") once("tooSlow", ctx, "You need more speed: jump, jump again, and a third time to dash into him!", 6000);
       else ctx.hurt(away(hs, hl, Bw.s, Bw.l));
@@ -1161,21 +1147,21 @@ const FurnaceMoon = (() => {
       bowser.visible = false; S.hanging = true; S.jr.phase = "hang"; S.jr.t = 0;
       jr.g.visible = true; jr.paint.visible = false;
       ctx.Audio.boom(); ctx.shake(0.4);
-      ctx.toast("Bowser Jr. is slipping off the edge!", 2600);
+      ctx.toast("The young villain is slipping off the edge!", 2600);
       ctx.hint("His brush fell into the chasm... Reach out to him:\nwalk to the edge and press Punch.", 9000);
     }
   }
   function updateEnding(dt, ctx, hs, hl, hh) {
     const J = S.jr, E = LAYOUT.edge;
     if (!S.saved) {
-      J.s = E.s; J.l = E.l; J.h = terrainH(E.s - 0.5, 0) - 1.25 + 0.08 * Math.sin(S.t * 9);
+      J.s = E.s; J.l = E.l; J.h = terrainH(E.s - 0.5, 0) - 0.85 + 0.08 * Math.sin(S.t * 9);
       placeAt(jr.g, J.s, J.l, J.h, E.s - 3, 0);
       jr.brush.visible = false;
       return;
     }
     S.savedT += dt;
     const k = smooth(0, 1, S.savedT);
-    J.s = E.s - 1.5 * k; J.h = terrainH(E.s - 0.5, 0) - 1.25 + 1.25 * k;
+    J.s = E.s - 1.5 * k; J.h = terrainH(E.s - 0.5, 0) - 0.85 + 0.85 * k;
     placeAt(jr.g, J.s, 0, J.h, S.savedT < 2 ? hs : E.s + 10, S.savedT < 2 ? hl : 6);
     jr.brush.visible = S.savedT > 1.6;
     if (S.savedT > 2) {                                  // he paints the road home
@@ -1191,8 +1177,8 @@ const FurnaceMoon = (() => {
   function reachOut(ctx) {
     S.saved = true; S.savedT = 0;
     ctx.Audio.victory();
-    ctx.toast("Mario takes Bowser Jr.'s hand.", 2600);
-    ctx.hint("Bowser Jr.: \"You... saved me? Even after all that?\"\nHe gets his brush back, and paints one road home for everyone.", 9000);
+    ctx.toast("Mario takes the young villain's hand.", 2600);
+    ctx.hint("The young villain: \"You... saved me? Even after all that?\"\nHe gets his brush back, and paints one road home for everyone.", 9000);
   }
 
   // ---- punch: deflect, the young villain, cages, reaching out at the end ----
@@ -1221,7 +1207,7 @@ const FurnaceMoon = (() => {
       return v.clone().addScaledVector(fwd, -along).length() < 1.8;
     };
     // a paint ball rolling at the hero goes back where it came from
-    if (S.hasDeflect) for (const b of S.balls) if (!b.back && reach(localPos(b.ps, b.pl, b.ph + 0.7), 3)) { deflect(b, ctx); return 1; }
+    if (S.hasDeflect) for (const b of S.balls) if (!b.back && reach(localPos(b.ps, b.pl, b.ph + 0.7), 3.4)) { deflect(b, ctx); return 1; }
     const J = S.jr;
     if (J.phase === "pillar" && J.state === "blind" && reach(localPos(J.s, J.l, J.h + 0.8), 2.8)) { hitJr(ctx); return 1; }
     if (J.phase === "hang" && !S.saved && dist(c.s, c.l, J.s, J.l) < 2.8) { reachOut(ctx); return 1; }
@@ -1244,7 +1230,7 @@ const FurnaceMoon = (() => {
   function once(key, ctx, text, ms) { if (!S.hints[key]) { S.hints[key] = true; ctx.hint(text, ms || 6000); } }
   function updateHints(ctx, s, l) {
     const h = (k, cond, text, ms) => { if (cond) once(k, ctx, text, ms); };
-    h("land", S.t > 0.5 && s < 4, "The Furnace Moon! The lava lake, the volcanoes, Bowser's citadel...\nand Bowser Jr. with his brush, right below.", 8000);
+    h("land", S.t > 0.5 && s < 4, "The Furnace Moon! The lava lake, the volcanoes, Bowser's citadel...\nand the young villain with his brush, right below.", 8000);
     h("slope", s > 4 && s < 12, "He rolls paint balls down the slope. Dodge them!");
     h("shore", s > 44 && s < 50 && !S.hasDeflect, "Coins! Collect 8 of them for the shrine by the shore.");
   }
@@ -1303,6 +1289,7 @@ const FurnaceMoon = (() => {
     const c = coordsOf(u);
     let f = Math.max(terrainH(c.s, c.l), -0.7);           // the lava surface counts as the floor for the camera
     for (const o of solids) { if (o.gone || o.top > 20 || h < o.bottom - 0.3 || !inFoot(o, c.s, c.l)) continue; if (o.top > f) f = o.top; }
+    rocksNear(c.s, (o) => { if (h >= o.bottom - 0.3 && inFoot(o, c.s, c.l) && o.top > f) f = o.top; });
     return { floor: f, h };
   }
   function cameraHint() { return null; }
@@ -1334,12 +1321,12 @@ const FurnaceMoon = (() => {
 
   function objective() {
     if (S.won || S.saved) return "Home together!";
-    if (S.hanging) return "Reach out to Bowser Jr.";
+    if (S.hanging) return "Reach out to the young villain";
     if (S.final) return S.shieldT > 0 ? "Dash into Bowser after his slam" : (S.delivered ? "Eat the fire mushroom" : "Get past the ring of fire");
     if (S.caged) return "Free your friends (" + Object.keys(S.freed).length + "/4)";
     if (S.introT >= 0) return "Something is coming...";
     if (S.jr.phase === "pillar" && S.hasDeflect) return "Send the paint back (" + (3 - S.jr.hp) + "/3)";
-    if (S.jr.phase === "pillar" || S.coins >= LAYOUT.shrine.cost) return S.hasDeflect ? "Go up to Bowser Jr." : "Buy the deflect punch at the shrine";
+    if (S.jr.phase === "pillar" || S.coins >= LAYOUT.shrine.cost) return S.hasDeflect ? "Go up to the young villain" : "Buy the deflect punch at the shrine";
     if (S.jr.phase !== "slope") return S.coins > 0 ? "Coins for the shrine (" + S.coins + "/" + LAYOUT.shrine.cost + ")" : "Find the real bridge";
     return "Down into the crater";
   }
@@ -1347,6 +1334,7 @@ const FurnaceMoon = (() => {
 
   const debug = {
     get state() { return S; }, layout: LAYOUT,
+    rockColliders() { const out = []; for (const b of rockGrid.values()) out.push(...b); return out; },
     coordsOf: (p) => coordsAt(p), worldPos, dirAt, query, terrainH, floorAt,
     get coins() { return S.coins; }, get hasDeflect() { return S.hasDeflect; }, get hasDash() { return S.hasDash; },
     get jr() { return Object.assign({}, S.jr); }, get balls() { return S.balls.map(b => Object.assign({}, b)); },

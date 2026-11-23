@@ -9,7 +9,7 @@ A browser platformer on small round planets, built with Three.js and no build st
 - **Technical notes:** [docs/wind-gardens.md](docs/wind-gardens.md), [docs/basalt-mines.md](docs/basalt-mines.md), [docs/ink-swamp.md](docs/ink-swamp.md), [docs/furnace-moon.md](docs/furnace-moon.md)
 - **Story and the four stars:** [game-design/four-planets.md](game-design/four-planets.md) (Hebrew)
 
-Status: prototype. Characters other than the hero and Bowser are simple stand-ins until their models are installed (`js/models.js`), and the level has not yet been tested on a real touch device or with a child.
+Status: prototype. Most characters are original designs built in code (`js/characters.js`); the hero, Bowser and four friends use the models credited below. The game has not yet been tested on a real touch device or with a child.
 
 ---
 

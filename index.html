@@ -1622,7 +1622,13 @@ function camPullIn(target, want, margin) {
     const hits = camRay.intersectObjects(L.colliders, true);
     if (hits.length && hits[0].distance - 0.8 < free) { free = hits[0].distance - 0.8; blocked = true; }
   }
-  if (blocked) want.copy(target).addScaledVector(dirv, Math.max(CAM_MIN_DIST, free));
+  if (blocked) {
+    want.copy(target).addScaledVector(dirv, Math.max(CAM_MIN_DIST, free));
+    // the minimum distance can still leave the camera in the ground (the hero knocked into a narrow
+    // pit by the trench wall): lift it straight up until it clears the surface under it
+    const f = camFloorAt(want);
+    if (f.h < f.floor + margin) want.addScaledVector(want.clone().sub(active.center).normalize(), f.floor + margin - f.h);
+  }
   return blocked;
 }
 
@@ -1693,10 +1699,13 @@ function updateCameraFollow(dt, extra) {
     camPullIn(look, camera.position, 0.3);
   } else camera.position.copy(camFollow);
 
+  // shake the aim, not the camera: moving the camera itself could push it into the ground or a wall
+  // right after the pull-in above made it clear (that was the flaky trench case in tools/camera-check.js)
   if (camShake > 0) {
-    camera.position.x += (Math.random() - 0.5) * camShake;
-    camera.position.y += (Math.random() - 0.5) * camShake;
-    camera.position.z += (Math.random() - 0.5) * camShake;
+    const k = camShake * Math.max(1, camera.position.distanceTo(look) / 6);
+    look.x += (Math.random() - 0.5) * k;
+    look.y += (Math.random() - 0.5) * k;
+    look.z += (Math.random() - 0.5) * k;
     camShake = Math.max(0, camShake - dt * 1.6);
   }
   camera.up.copy(camUp);

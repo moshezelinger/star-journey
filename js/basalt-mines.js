@@ -177,12 +177,35 @@ const BasaltMines = (() => {
     return s >= o.s0 && s <= o.s1 && l >= o.l0 && l <= o.l1;
   }
   const _u = new V3();
+  // ---- tree trunks: decorative trees near the walkable belt block like the other solids ----
+  // (issue #20: the dinosaur used to walk through them). Kept in buckets along s, so a query only
+  // looks at the trees around it. Trees right next to a coin get no collider, so a coin is never blocked.
+  const treeGrid = new Map(), TREE_CELL = 4;
+  let treeList = [];
+  function registerTrees(trunkR, reachL, coinSpots) {
+    treeGrid.clear();
+    for (const t of treeList) {
+      if (Math.abs(t.l) > reachL) continue;
+      const r = trunkR * t.k;
+      if (coinSpots.some(c => Math.hypot(c.s - t.s, c.l - t.l) < r + 1.4)) continue;
+      const key = Math.floor(t.s / TREE_CELL);
+      if (!treeGrid.has(key)) treeGrid.set(key, []);
+      treeGrid.get(key).push({ s: t.s, l: t.l, r });
+    }
+  }
+  function treeAt(s, l) {
+    const key = Math.floor(s / TREE_CELL);
+    for (let d = -1; d <= 1; d++) { const b = treeGrid.get(key + d); if (b) for (const t of b) if (Math.hypot(s - t.s, l - t.l) < t.r) return true; }
+    return false;
+  }
+
   function query(pos, curH) {
     _u.copy(pos).sub(center).normalize();
     const c = coordsOf(_u);
     let ground = terrainH(c.s, c.l), blocked = false;
     if (ground > curH + STEP) blocked = true;
     else if (ground > curH + 0.2 && slopeAt(c.s, c.l).mag > 1.25) blocked = true;    // too steep to walk up
+    if (treeAt(c.s, c.l)) blocked = true;
     for (const o of solids) {
       if (o.gone || !inFoot(o, c.s, c.l)) continue;
       if (o.top <= curH + STEP) { if (o.top > ground) ground = o.top; }
@@ -360,6 +383,7 @@ const BasaltMines = (() => {
       cols.push({ s, l, h: h - 0.4, k: 0.7 + rand() * 0.8, ky: 1 + rand() * 2.2, rot: rand() * 6.28,
         color: new THREE.Color(0x4a4655).multiplyScalar(0.85 + rand() * 0.3) });
     }
+    treeList = trees;
     const trunkG = new THREE.CylinderGeometry(0.22, 0.34, 4.2, 6); trunkG.translate(0, 2.1, 0);
     const crownG = new THREE.IcosahedronGeometry(1.7, 0); crownG.scale(1.25, 0.7, 1.25); crownG.translate(0, 4.6, 0);
     const crown2 = new THREE.IcosahedronGeometry(1.2, 0); crown2.scale(1.1, 0.8, 1.1); crown2.translate(0.6, 5.5, -0.3);
@@ -621,6 +645,7 @@ const BasaltMines = (() => {
     buildBreakables();
     buildShrine();
     buildCoins();
+    registerTrees(0.3, LAYOUT.edgeL + 2, coins);
 
     // the switch lever and its arrow sign (straight = to DK, right = the dead end)
     const lv = new THREE.Group();
@@ -1247,6 +1272,7 @@ const BasaltMines = (() => {
 
   const debug = {
     get state() { return S; }, layout: LAYOUT,
+    treeColliders() { const out = []; for (const b of treeGrid.values()) out.push(...b); return out; }, treeAt,
     coordsOf: (p) => coordsAt(p), worldPos, dirAt, query, terrainH, floorH,
     get beetle() { return S.beetle; },
     get breakables() { return breakables.map(b => ({ kind: b.kind, gone: !!b.solid.gone, s: b.s, l: b.l })); },
