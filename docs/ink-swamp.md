@@ -29,7 +29,7 @@ Checkpoints: `landing` 0, `roots` 12, `lake` 41, `grove` 65, `pond` 87, `coins` 
 
 ## Characters
 
-Installed (CC-BY 4.0, source and licence checked on Sketchfab, files from public copies on GitHub with the original `license.txt`): Yoshi ("DS DSi - Super Mario 64 DS - Yoshi" by DokigerElRojito, 687 triangles), Toad ("TOAD" by ijosephpinta, 14,458), Piranha Plant (by Marcus Vinicius, 794). The painted hero uses the player's own model, tinted purple by how much paint is left. Still stand-ins: Luigi and the ink squid (Blooper); see issue #19.
+The brother (the player here, with a walk cycle, a jump pose and a punch driven by `Characters.drive` in `index.html`; he sits astride the dinosaur when mounted) and the ink squid (indigo mantle, glowing spots, eight pulsing tentacles) are built in `js/characters.js` (`docs/characters.md`). The dinosaur, the mushroom friend and the swamp plant also have code versions (a teal dinosaur with orange back plates and a saddle; a small friend under a blue cap with glowing spots; a flytrap with two jaws and eyes on stalks, stars when its head is stuck), shown with `?models=code`. By default these three show the installed models (CC-BY 4.0, source and licence checked on Sketchfab, files from public copies on GitHub with the original `license.txt`): "DS DSi - Super Mario 64 DS - Yoshi" by DokigerElRojito (687 triangles), "TOAD" by ijosephpinta (14,458), "Piranha Plant" by Marcus Vinicius (794). The painted hero uses the player's own model, tinted purple by how much paint is left.
 
 ## Coins
 

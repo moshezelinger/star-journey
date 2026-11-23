@@ -384,29 +384,9 @@ const InkSwamp = (() => {
     parent.add(stand);
     return Models.load(id, parent, stand, opts);
   }
-  function eyes(parent, y, z, r, gap) {
-    for (const x of [-gap, gap]) { const e = add(parent, ball(r, 0xfffaf0, { flatShading: false }, 10, 8), x, y, z); add(e, ball(r * 0.5, 0x1a1420, { flatShading: false }, 8, 6), 0, 0, r * 0.7); }
-  }
-  function makeLuigiStand() {
-    const g = new THREE.Group();
-    add(g, box(0.55, 0.7, 0.4, 0x2a4fd0), 0, 0.45, 0);
-    add(g, box(0.62, 0.55, 0.42, 0x2eaa4a), 0, 1.05, 0);
-    add(g, ball(0.27, 0xffc79a, { flatShading: false }), 0, 1.5, 0);
-    add(g, cyl(0.29, 0.29, 0.16, 12, 0x2eaa4a), 0, 1.72, 0);
-    add(g, box(0.42, 0.06, 0.24, 0x2eaa4a), 0, 1.66, 0.22);
-    return g;
-  }
-  function makeYoshiStand() {
-    const g = new THREE.Group();
-    add(g, ball(0.6, 0x4ac040, { flatShading: false }), 0, 0.9, 0).scale.set(0.9, 1, 1.2);
-    add(g, ball(0.5, 0xffffff, { flatShading: false }), 0, 0.8, 0.25).scale.set(0.8, 0.9, 0.8);
-    add(g, ball(0.42, 0x4ac040, { flatShading: false }), 0, 1.6, 0.55);
-    add(g, ball(0.32, 0x4ac040, { flatShading: false }), 0, 1.5, 0.95).scale.set(1.1, 0.8, 1);
-    eyes(g, 1.85, 0.6, 0.12, 0.14);
-    add(g, ball(0.25, 0xd03030, { flatShading: false }), 0, 1.25, -0.5).scale.set(1.4, 0.7, 1);   // saddle
-    for (const x of [-0.3, 0.3]) add(g, box(0.25, 0.5, 0.45, 0xe06030), x, 0.25, 0.1);
-    return g;
-  }
+  // the characters themselves are built in js/characters.js (original designs)
+  function makeLuigiStand(o) { return Characters.brother(Object.assign({ height: 1.8, lantern: false }, o || {})).g; }
+  function makeYoshiStand() { return Characters.dinosaur().g; }
   let luigiFoot = null, rider = null, tongue = null, yoshiNpc = null, toad = null, mario = null, squid = null, piranhas = [];
   function buildCharacters() {
     // Luigi on foot (the player before the dinosaur comes)
@@ -415,7 +395,7 @@ const InkSwamp = (() => {
     // the rider: the dinosaur with Luigi on his back; the tongue comes out of the snout
     rider = new THREE.Group();
     const y = new THREE.Group(); y.add(makeYoshiStand()); y.model = withModel("yoshi", y, []); rider.add(y);
-    const seat = new THREE.Group(); seat.position.set(0, 0.95, -0.35); seat.scale.setScalar(0.82); seat.add(makeLuigiStand()); rider.add(seat);
+    const seat = new THREE.Group(); seat.position.set(0, 0.95, -0.35); seat.scale.setScalar(0.82); seat.add(makeLuigiStand({ sit: true })); rider.add(seat);
     seat.model = withModel("luigi", seat, []);
     tongue = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1, 8), new THREE.MeshStandardMaterial({ color: 0xff5a8a, roughness: 0.4 }));
     tongue.geometry.translate(0, 0.5, 0); tongue.geometry.rotateX(Math.PI / 2);
@@ -428,9 +408,7 @@ const InkSwamp = (() => {
     yoshiNpc = new THREE.Group(); yoshiNpc.add(makeYoshiStand()); yoshiNpc.model = withModel("yoshi", yoshiNpc, []); group.add(yoshiNpc);
     // the mushroom friend
     toad = new THREE.Group();
-    const tg = new THREE.Group(); add(tg, ball(0.6, 0xffffff, { flatShading: false }), 0, 1.1, 0).scale.set(1, 0.75, 1);
-    add(tg, ball(0.28, 0xffd9b0, { flatShading: false }), 0, 0.65, 0.05); add(tg, box(0.45, 0.4, 0.3, 0x2a4fd0), 0, 0.25, 0); eyes(tg, 0.7, 0.26, 0.06, 0.1);
-    toad.add(tg); toad.model = withModel("toad", toad, []); group.add(toad);
+    toad.add(Characters.mushroomFriend().g); toad.model = withModel("toad", toad, []); group.add(toad);
     // the painted hero (same model as the player, tinted)
     mario = new THREE.Group();
     const mg = new THREE.Group(); add(mg, box(0.5, 0.7, 0.35, 0x2a2aa0), 0, 0.45, 0); add(mg, box(0.55, 0.5, 0.38, 0xd02020), 0, 1.0, 0); add(mg, ball(0.25, 0xffc79a), 0, 1.42, 0); add(mg, cyl(0.27, 0.27, 0.14, 12, 0xd02020), 0, 1.62, 0);
@@ -439,23 +417,15 @@ const InkSwamp = (() => {
     S.marioFist.position.set(0.4, 1.0, 0.5); mario.add(S.marioFist);
     // the ink squid
     squid = new THREE.Group();
-    const sq = new THREE.Group(); add(sq, ball(0.7, 0xf4f4f8, { flatShading: false }), 0, 1.2, 0).scale.set(0.8, 1.3, 0.8);
-    eyes(sq, 1.25, 0.5, 0.12, 0.2);
-    for (let k = 0; k < 6; k++) { const t = add(sq, cyl(0.07, 0.04, 0.9, 5, 0xf4f4f8), Math.cos(k) * 0.35, 0.3, Math.sin(k) * 0.35); t.rotation.z = Math.cos(k) * 0.3; }
+    const sq = Characters.inkSquid().g;
     squid.add(sq); squid.body = sq; squid.model = withModel("blooper", squid, []); group.add(squid);
     S.inkBlob = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), new THREE.MeshBasicMaterial({ color: 0x0a0814 })); S.inkBlob.visible = false; group.add(S.inkBlob);
     // piranha plants
     piranhas = LAYOUT.piranhas.map(p => {
-      const g = new THREE.Group();
-      const stem = new THREE.Group(); g.add(stem);
-      add(stem, cyl(0.12, 0.16, 1.4, 8, 0x3a9a3a), 0, 0.7, 0);
-      const head = new THREE.Group(); head.position.y = 1.5; stem.add(head);
-      add(head, ball(0.55, 0xd02a2a, { flatShading: false }), 0, 0.2, 0).scale.set(1, 1, 1.1);
-      add(head, box(0.9, 0.08, 0.5, 0xffffff), 0, 0.05, 0.35);
-      for (const x of [-0.6, 0.6]) add(g, box(0.9, 0.06, 0.4, 0x3a9a3a), x, 0.1, 0).rotation.z = x * 0.6;
-      const mod = withModel("piranha", stem, [head]);
-      group.add(g);
-      return { g, stem, head, mod };
+      const sn = Characters.swampSnapper();
+      const mod = withModel("piranha", sn.stem, [sn.dazed]);
+      group.add(sn.g);
+      return { g: sn.g, stem: sn.stem, head: sn.head, dazed: sn.dazed, mod };
     });
   }
 
@@ -717,6 +687,7 @@ const InkSwamp = (() => {
         if (st.t > 0.3) { st.state = "stuck"; st.t = 0; st.hit = false; }
       } else if (st.state === "stuck") {
         pl.stem.rotation.x = 1.35;
+        if (pl.dazed) pl.dazed.visible = st.t > 0.1 && st.t < 1.5;
         if (st.t > 1.6) { st.state = "idle"; st.t = 0; }
       }
     });
@@ -983,7 +954,7 @@ const InkSwamp = (() => {
     get huts() { return S.hutState.slice(); }, get toadFree() { return S.toadFree; }, get holding() { return S.holding; },
     get bridgeBroken() { return S.bridgeBroken; },
     skipIntro() { S.marioScene = "away"; mario.visible = false; },
-    models: () => ({ yoshi: rider, toad, mario, squid, piranha: piranhas[0] && piranhas[0].g, yoshiNpc })
+    models: () => ({ yoshi: rider, toad, mario, squid, piranha: piranhas[0] && piranhas[0].g, yoshiNpc, luigiFoot })
   };
 
   function attach(e) { env = e; reset(); }

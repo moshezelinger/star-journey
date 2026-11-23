@@ -203,6 +203,7 @@
 <script src="js/tuning.js"></script>
 <script src="js/day-cycle.js"></script>
 <script src="js/models.js"></script>
+<script src="js/characters.js"></script>
 <script src="js/wind-gardens.js"></script>
 <script src="js/basalt-mines.js"></script>
 <script src="js/ink-swamp.js"></script>
@@ -1548,6 +1549,8 @@ function updatePlaying(dt) {
       if (b.ShoulderR_025) b.ShoulderR_025.rotation.y = rest.ShoulderR_025.y + 1.6 - sw * 0.4;
     }
   }
+  // a character built in code as the player's look (star 3): tell it about jumps and punches
+  if (currentAvatar) Characters.drive(currentAvatar, { air: !P.grounded, punch: P.punchT > 0 ? Math.sin(clamp(1 - P.punchT / PUNCH_TIME, 0, 1) * Math.PI) : 0 });
 
   // punch timer; the hit resolves once, partway through the swing
   if (P.punchT > 0) {
@@ -1831,6 +1834,7 @@ function animate() {
   Particles.update(dt);
   Models.update(dt);
   updateAvatar();
+  Characters.update(dt);
   Audio.update();
   starfield.position.copy(camera.position);
   updatePlanetDetail();

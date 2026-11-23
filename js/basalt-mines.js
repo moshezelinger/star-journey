@@ -564,84 +564,12 @@ const BasaltMines = (() => {
     parent.add(stand);
     return Models.load(id, parent, stand, opts);
   }
-  function eyes(parent, y, z, r, gap) {
-    for (const x of [-gap, gap]) {
-      const e = add(parent, ball(r, 0xfffaf0, { flatShading: false }, 10, 8), x, y, z);
-      add(e, ball(r * 0.5, 0x1a1420, { flatShading: false }, 8, 6), 0, 0, r * 0.7);
-    }
-  }
-  function makeLuigi() {
-    const g = new THREE.Group();
-    add(g, box(0.55, 0.7, 0.4, 0x2a4fd0), 0, 0.45, 0);
-    add(g, box(0.62, 0.55, 0.42, 0x2eaa4a), 0, 1.05, 0);
-    add(g, ball(0.27, 0xffc79a, { flatShading: false }), 0, 1.5, 0);
-    add(g, cyl(0.29, 0.29, 0.16, 12, 0x2eaa4a), 0, 1.72, 0);
-    add(g, box(0.42, 0.06, 0.24, 0x2eaa4a), 0, 1.66, 0.22);
-    const armR = new THREE.Group(); armR.position.set(0.38, 1.25, 0); g.add(armR);
-    add(armR, box(0.16, 0.55, 0.16, 0x2eaa4a), 0, -0.25, 0);
-    const lantern = new THREE.Group(); lantern.position.set(-0.5, 0.85, 0.15); g.add(lantern);
-    add(lantern, box(0.24, 0.3, 0.24, 0x3a3a46), 0, 0, 0);
-    add(lantern, ball(0.16, lampMat, null, 8, 6), 0, 0, 0);
-    return { g, armR, lantern };
-  }
-  function makeDK() {
-    const g = new THREE.Group();
-    const brown = 0x6a3f22, tan = 0xd9a873;
-    add(g, ball(1.05, brown, { flatShading: false }, 16, 12), 0, 1.35, 0).scale.set(1.05, 1.0, 0.85);
-    add(g, ball(0.6, tan, { flatShading: false }), 0, 1.25, 0.55).scale.set(1, 1.1, 0.5);
-    add(g, ball(0.55, brown, { flatShading: false }), 0, 2.45, 0.15);
-    add(g, ball(0.38, tan, { flatShading: false }), 0, 2.38, 0.5).scale.set(1.1, 0.8, 0.7);
-    eyes(g, 2.6, 0.58, 0.1, 0.17);
-    add(g, box(0.5, 0.75, 0.12, 0xd02a20), 0, 1.75, 0.82).rotation.x = -0.2;   // tie
-    const arms = [];
-    for (const sx of [-1, 1]) {
-      const a = new THREE.Group(); a.position.set(sx * 0.95, 2.1, 0); g.add(a);
-      add(a, cyl(0.28, 0.32, 1.5, 10, brown, { flatShading: false }), 0, 0.75, 0);
-      add(a, ball(0.36, tan, { flatShading: false }), 0, 1.55, 0);
-      a.rotation.z = sx * -0.35;
-      arms.push(a);
-    }
-    for (const sx of [-1, 1]) add(g, cyl(0.3, 0.36, 0.7, 10, brown), sx * 0.5, 0.35, 0);
-    return { g, arms };
-  }
-  function makeBeetle() {
-    const g = new THREE.Group();
-    const body = new THREE.Group(); g.add(body);
-    const shell = add(body, new THREE.Mesh(new THREE.SphereGeometry(0.95, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), H.mat(0x34303e, { flatShading: false, roughness: 0.4 })), 0, 0.35, -0.05);
-    shell.scale.set(0.95, 1.0, 1.1);
-    add(body, box(1.5, 0.75, 0.25, 0x23202b), 0, 0.75, 0.95).rotation.x = -0.25;   // the armoured front plate
-    add(body, ball(0.35, 0x2b2733, { flatShading: false }), 0, 0.45, 0.9);
-    eyes(body, 0.55, 1.15, 0.09, 0.15);
-    const back = new THREE.Group(); back.position.set(0, 0.55, -0.6); body.add(back);
-    for (let k = 0; k < 5; k++) { const c = add(back, box(0.08, 0.7, 0.08, crackMat), (k - 2) * 0.22, 0.25, -0.35); c.rotation.z = (k - 2) * 0.35; c.rotation.x = 0.6; }
-    for (const [x, z] of [[-0.6, 0.4], [0.6, 0.4], [-0.65, -0.3], [0.65, -0.3]]) add(body, cyl(0.12, 0.14, 0.4, 6, 0x1c1a22), x, 0.18, z);
-    return { g, body, back };
-  }
-  function makeMonkey() {
-    const g = new THREE.Group();
-    const body = new THREE.Group(); g.add(body);
-    add(body, ball(0.35, 0x8a5a30, { flatShading: false }), 0, 0.45, 0);
-    add(body, ball(0.28, 0x8a5a30, { flatShading: false }), 0, 0.95, 0.05);
-    add(body, ball(0.18, 0xe8c090, { flatShading: false }), 0, 0.9, 0.24).scale.set(1.2, 0.9, 0.6);
-    eyes(body, 1.02, 0.28, 0.06, 0.09);
-    const tail = add(body, cyl(0.05, 0.05, 0.9, 5, 0x8a5a30), 0, 0.5, -0.45); tail.rotation.x = 1.0;
-    const stone = add(g, ball(0.42, 0x4f4a5a, null, 8, 6), 0, 1.6, 0.2);
-    return { g, body, stone };
-  }
-  function makeJr() {
-    const g = new THREE.Group();
-    add(g, ball(0.5, 0xe0c040, { flatShading: false }), 0, 0.6, 0).scale.set(1, 1.05, 0.95);
-    add(g, ball(0.42, 0x3f8a3a, { flatShading: false }), 0, 0.65, -0.3);                 // shell
-    add(g, ball(0.42, 0xe8d060, { flatShading: false }), 0, 1.35, 0.05);
-    add(g, box(0.5, 0.35, 0.12, 0xffffff), 0, 0.85, 0.45);                              // bib
-    add(g, cyl(0.06, 0.22, 0.3, 6, 0xff7a20), 0, 1.78, -0.05);                          // hair tuft
-    eyes(g, 1.45, 0.36, 0.08, 0.14);
-    const brush = new THREE.Group(); brush.position.set(0.55, 1.0, 0.1); g.add(brush);
-    add(brush, cyl(0.06, 0.06, 1.6, 6, 0x8a5a30), 0, 0.6, 0);
-    const tip = add(brush, ball(0.2, 0xb050ff, { emissive: 0x8020ff, emissiveIntensity: 0.6 }, 10, 8), 0, 1.45, 0);
-    tip.scale.set(1, 1.5, 1);
-    return { g, brush, tip };
-  }
+  // the characters themselves are built in js/characters.js (original designs)
+  function makeLuigi() { return Characters.brother({ height: 1.9, lantern: true, lit: true }); }
+  function makeDK() { return Characters.bigApe(); }
+  function makeBeetle() { return Characters.basaltBeetle({ crackMat }); }
+  function makeMonkey() { return Characters.mineMonkey(); }
+  function makeJr() { return Characters.youngVillain(); }
 
   // ---- night / glow materials ----
   function makeMaterials() {
@@ -725,7 +653,7 @@ const BasaltMines = (() => {
     dkBeam = box(0.45, 2.6, 0.45, 0xc8955a);
     group.add(put(dkBeam, LAYOUT.dk.s, LAYOUT.dk.l, LAYOUT.slab.bottom - 1.3));
     dkBeam.translateY(0);
-    beetle = makeBeetle(); beetle.model = withModel("buzzy", beetle.body, [beetle.back]); group.add(beetle.g);
+    beetle = makeBeetle(); beetle.model = withModel("buzzy", beetle.body, [beetle.back, beetle.dazed]); group.add(beetle.g);
     monkeys = LAYOUT.monkeys.map(m => { const k = makeMonkey(); k.model = withModel("ukiki", k.body, []); group.add(k.g); return Object.assign(k, { def: m }); });
     jr = makeJr(); jr.model = withModel("bowserjr", jr.g, [jr.brush]); group.add(jr.g);
 
@@ -838,6 +766,7 @@ const BasaltMines = (() => {
     beetle.body.position.y = stuck ? -0.15 : (speed > 2 ? Math.abs(Math.sin(S.t * 22)) * 0.12 : 0);
     beetle.body.position.z = stuck ? 0.25 : 0;
     beetle.back.scale.setScalar(stuck ? 1.25 + 0.15 * Math.sin(S.t * 10) : 1);
+    if (beetle.dazed) beetle.dazed.visible = stuck;                       // stars: the moment for the power punch
   }
 
   // ---- monkeys and rolling stones ----
@@ -964,7 +893,7 @@ const BasaltMines = (() => {
     } else if (st.state === "exit") {
       placeAt(luigi.g, LAYOUT.pad.s - 2, -3.5, 0, hs, hl);
     }
-    luigi.lantern.children[1].material.emissiveIntensity = 1.2;
+    luigi.glass.material.emissiveIntensity = 1.2;
   }
 
   // ---- DK: thuds, the beam, the rescue ----
@@ -1334,7 +1263,7 @@ const BasaltMines = (() => {
     get beamWarns() { return S.beamWarns; },
     setSwitch(v) { S.switchStraight = !!v; },
     luigiReady() { S.luigi.state = "switch"; },
-    models: () => ({ luigi: luigi && luigi.g, dk: dk && dk.g, beetle: beetle && beetle.g, jr: jr && jr.g })
+    models: () => ({ luigi: luigi && luigi.g, dk: dk && dk.g, beetle: beetle && beetle.g, jr: jr && jr.g, monkey: monkeys[0] && monkeys[0].g })
   };
 
   // the young villain for the flight to the next star (index.html, the ambush in updateTransition)

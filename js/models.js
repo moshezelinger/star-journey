@@ -1,8 +1,9 @@
 "use strict";
 
 /* ============================================================
-   Character models (CLAUDE.md: characters are ready-made GLB/glTF models
-   in the Nintendo style, like Mario and Bowser).
+   Character model slots. Characters are built in code (js/characters.js,
+   docs/characters.md); a slot whose files are installed shows the model
+   instead, and ?models=code keeps the code version everywhere.
 
    Each entry names a model whose source page and licence were checked on
    Sketchfab (CC-BY 4.0, downloadable, under 30 thousand triangles).
@@ -91,6 +92,9 @@ const Models = (() => {
     }
   };
 
+  // index.html?models=code shows the characters built in code (js/characters.js) even where a
+  // model file is installed, to compare them (the hero keeps his model: there is no code hero)
+  const CODE_ONLY = /[?&]models=code\b/.test(location.search);
   const mixers = [];
   const handles = [];
 
@@ -123,7 +127,7 @@ const Models = (() => {
     parent.add(holder);
     const h = { id, holder, standIn: standIn || null, model: null, ready: false, mixer: null, failed: false };
     handles.push(h);
-    if (!spec || !spec.ready || typeof THREE.GLTFLoader !== "function") return h;
+    if (!spec || !spec.ready || (CODE_ONLY && id !== "mario") || typeof THREE.GLTFLoader !== "function") return h;
     new THREE.GLTFLoader().load(spec.path || ("assets/" + id + "/" + (spec.file || "scene.gltf")), (gltf) => {
       const model = gltf.scene;
       if (spec.strip) {                        // a stray helper mesh far from the character (the Bowser file has one)
