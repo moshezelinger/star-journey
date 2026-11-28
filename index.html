@@ -165,7 +165,7 @@
     <button class="ghost" data-star="0">1</button><button class="ghost" data-star="1">2</button><button class="ghost" data-star="2">3</button><button class="ghost" data-star="3">4</button>
   </div>
   <p id="legend">Move with the left stick, jump with the button.<br>On a keyboard: WASD or arrows, Space to jump, drag to look.</p>
-  <p id="credits">Music: "The Lantern Signal" by mosheze86.<br>Bowser model: "<a href="https://sketchfab.com/3d-models/bowser-super-mario-bros1-d02c1fa828364677b890ea8b2d408b97" target="_blank" rel="noopener">Bowser Super Mario Bros.1</a>" by <a href="https://sketchfab.com/Vandacvi" target="_blank" rel="noopener">Vandacvi</a>, CC-BY-4.0.<br>Mario model: "<a href="https://sketchfab.com/3d-models/mario-movie-super-mario-movie-13d05e3c76a148568decf1e8f25888f8" target="_blank" rel="noopener">Mario Movie (Super Mario Movie)</a>" by <a href="https://sketchfab.com/guinavarro.al" target="_blank" rel="noopener">Guilherme Navarro</a>, CC-BY-4.0.<br>Unofficial fan project. Mario, Luigi, Bowser and related characters belong to Nintendo.</p>
+  <p id="credits">Music: "The Lantern Signal", "The Three-Knock Trail", "Glowing Mushroom", "The Volcanic Path" and "The Volcano's Call" by mosheze86, made with Suno.<br>Bowser model: "<a href="https://sketchfab.com/3d-models/bowser-super-mario-bros1-d02c1fa828364677b890ea8b2d408b97" target="_blank" rel="noopener">Bowser Super Mario Bros.1</a>" by <a href="https://sketchfab.com/Vandacvi" target="_blank" rel="noopener">Vandacvi</a>, CC-BY-4.0.<br>Mario model: "<a href="https://sketchfab.com/3d-models/mario-movie-super-mario-movie-13d05e3c76a148568decf1e8f25888f8" target="_blank" rel="noopener">Mario Movie (Super Mario Movie)</a>" by <a href="https://sketchfab.com/guinavarro.al" target="_blank" rel="noopener">Guilherme Navarro</a>, CC-BY-4.0.<br>Unofficial fan project. Mario, Luigi, Bowser and related characters belong to Nintendo.</p>
 </div>
 
 <!-- Victory -->
@@ -209,7 +209,7 @@
 <script src="js/ink-swamp.js"></script>
 <script src="js/furnace-moon.js"></script>
 <script src="js/tune-panel.js"></script>
-<script src="js/menu-music.js"></script>
+<script src="js/music.js"></script>
 <script>
 "use strict";
 const { surfaceUp, nearestPlanet, projectTangent } = GameShared;
@@ -239,7 +239,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // ---------- audio ----------
 const Audio = {
   ctx: null, master: null, musicGain: null, on: true,
-  nextNote: 0, step: 0, root: 220, menuQuiet: true,
+  nextNote: 0, step: 0, root: 220, synthQuiet: true,
   init() {
     if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -249,7 +249,7 @@ const Audio = {
     this.master.gain.value = this.on ? 0.9 : 0;
     this.master.connect(this.ctx.destination);
     this.musicGain = this.ctx.createGain();
-    this.musicGain.gain.value = this.menuQuiet ? 0 : 0.16;
+    this.musicGain.gain.value = this.synthQuiet ? 0 : 0.16;
     this.musicGain.connect(this.master);
     this.nextNote = this.ctx.currentTime + 0.2;
   },
@@ -257,11 +257,11 @@ const Audio = {
   setOn(v) {
     this.on = v;
     if (this.master) this.master.gain.setTargetAtTime(v ? 0.9 : 0, this.ctx.currentTime, 0.05);
-    MenuMusic.setOn(v);
+    Music.setOn(v);
   },
-  // the opening screen has its own song: the in-game arpeggio waits until a game starts
-  setMenuQuiet(v) {
-    this.menuQuiet = v;
+  // a recorded song is playing (js/music.js): the arpeggio waits
+  setSynthQuiet(v) {
+    this.synthQuiet = v;
     if (this.musicGain) this.musicGain.gain.setTargetAtTime(v ? 0 : 0.16, this.ctx.currentTime, v ? 0.15 : 0.6);
   },
   tone(freq, dur, type, vol, sweepTo) {
@@ -1200,13 +1200,25 @@ function goToStar(i) {
 window.goToStar = goToStar;
 document.querySelectorAll("#starPick button").forEach(b => b.addEventListener("click", () => { Audio.init(); Audio.click(); goToStar(+b.dataset.star); }));
 
-// "The Lantern Signal" (js/menu-music.js) plays on the menu and on star 1, softer in the game.
-// The in-game arpeggio keeps the other stars and waits while the song plays.
-function musicWanted() { return state === S.MENU || (state === S.PLAYING && !!active && active.def.theme === "wind"); }
+// Recorded music (js/music.js): "The Lantern Signal" on the menu and on star 1 (softer in the game),
+// one Suno song on each other star; star 4 asks its level (the volcanic path, then the Bowser fight).
+// The in-game arpeggio waits while a song plays and fills in where there is none.
+const STAR_MUSIC = { wind: ["lantern", 0.6], mines: ["knock", 1], swamp: ["mushroom", 1] };
+function musicWanted() {
+  if (state === S.MENU) return ["lantern", 1];
+  if (state !== S.PLAYING || !active) return [null, 1];
+  const L = levelOf(active);
+  if (L && L.music) return [L.music(), 1];
+  return STAR_MUSIC[active.def.theme] || [null, 1];
+}
 function syncMusic() {
-  const want = musicWanted();
-  MenuMusic.setWanted(want, state === S.MENU ? 0.5 : 0.3);
-  if (Audio.menuQuiet !== want) Audio.setMenuQuiet(want);
+  const [name, scale] = musicWanted();
+  Music.want(name, scale);
+  if (state === S.TRANSITION && transition) {             // the next star's song loads during the flight
+    const m = STAR_MUSIC[planets[transition.next].def.theme] || ["volcanic"];
+    Music.preload(m[0]);
+  }
+  if (Audio.synthQuiet !== Music.synthQuiet) Audio.setSynthQuiet(Music.synthQuiet);
 }
 
 function goToMenu() {
@@ -1862,7 +1874,7 @@ function animate() {
   Characters.update(dt);
   Audio.update();
   syncMusic();
-  MenuMusic.update();
+  Music.update();
   starfield.position.copy(camera.position);
   updatePlanetDetail();
   DayCycle.apply(camera, P.pos, active && active.center);
@@ -1951,7 +1963,7 @@ onResize();
 // place the player somewhere sensible so the menu scene looks alive
 landOnPlanet(0);
 state = S.MENU;
-MenuMusic.init({ isWanted: musicWanted });
+syncMusic();
 // test/QA access (see docs/wind-gardens.md)
 let dbgPause = false;
 window.__dbg = { P, camera, get camDir() { return camDir; }, WindGardens, BasaltMines, InkSwamp, FurnaceMoon, QUALITY, Models, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },

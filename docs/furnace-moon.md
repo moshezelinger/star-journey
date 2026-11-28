@@ -28,6 +28,14 @@ Checkpoints: `landing` 0, `shore` 44, `arena` 59, `crater` 86. Falling into lava
   - The big ape lifts three stone slabs. 9 coins under them unlock the **dash**.
 - **The last round** (all four free): a ring of fire surrounds him. It hurts without the fire mushroom (20 s of protection). He only slams now, and pants for 2.4 s after each slam (dizzy stars). Only a dash into him during that pause beats him; walking into him does not. A dash counts until the hero lands, so one that ran out of speed just before reaching him still hits.
 
+## Music
+
+Two of Moshe's Suno tracks, asked for by `music()` in `js/furnace-moon.js` and played by `js/music.js`:
+- "The Volcanic Path" (`assets/music/the-volcanic-path.mp3`, 3:00, volume 0.55) from the landing over the slope, the bridges, the shrine and fight 1, until Bowser leaps down into the crater.
+- "The Volcano's Call" (`assets/music/volcanos-call.mp3`, 2:49, volume 0.42) from his leap for the whole fight, the last round included. Its first seconds are distant drums and a low rumble, which fits his landing. It loads ahead of time while the first song plays, and fades out over 3 s when he falls.
+
+After he falls the arpeggio comes back. A restart of the star starts over with the first song; a respawn in the crater keeps the fight song.
+
 ## Abilities added on this star
 
 - **Deflect punch:** a punch within 3.4 units of a paint ball rolling at the hero sends it back to the young villain. The level handles it inside `punchHit`.

@@ -1330,6 +1330,13 @@ const FurnaceMoon = (() => {
     if (S.jr.phase !== "slope") return S.coins > 0 ? "Coins for the shrine (" + S.coins + "/" + LAYOUT.shrine.cost + ")" : "Find the real bridge";
     return "Down into the crater";
   }
+  // recorded music (js/music.js): "The Volcanic Path" from the landing over the slope, the bridges and
+  // the first fight; "The Volcano's Call" from the moment Bowser leaps down until he falls (its first
+  // seconds are distant drums and a low rumble, which fits his landing); after that the arpeggio.
+  function music() {
+    if (S.beaten || S.hanging || S.won) return null;
+    return S.bowser.state === "off" ? "volcanic" : "fight";
+  }
   function hudText() { const n = (env && env.P && env.P.coins) || 0; return "🌋 " + objective() + (n ? "   🪙 " + n : ""); }
 
   const debug = {
@@ -1360,7 +1367,7 @@ const FurnaceMoon = (() => {
   return {
     configure, shapeGround, smoothGround, wantsSmooth, exitDir, build, attach, reset, update, query, drift, constrain,
     punchHit, aim, scripted() {}, objective, hudText, debug, colliders, cameraHint, cameraFloor, cameraShot, cameraFocus, dayAxis,
-    avatar, abilities,
+    avatar, abilities, music,
     respawn: (P, hooks, restoreHealth) => respawn(P, hooks, restoreHealth),
     isLocked: () => false,
     get layout() { return LAYOUT; }

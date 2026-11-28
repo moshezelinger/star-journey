@@ -48,6 +48,10 @@ Built in code in `js/characters.js` (`docs/characters.md`), as original designs:
 
 The big ape still shows the installed `dk` model by default ("Donkey Kong 64" by chicosantossaraiva, CC-BY 4.0); `?models=code` shows the code version. The other slots in `js/models.js` (`luigi`, `goomba`, `paratroopa`, `buzzy`, `ukiki`, `bowserjr`) are not installed, so the code characters show.
 
+## Music (decision by Moshe, 28.11.2026)
+
+"The Three-Knock Trail" (`assets/music/three-knock-trail.mp3`, 2:28, Moshe's Suno track: three knocks on log drums, a marimba groove, a muted brass and flute theme) plays while the hero is on star 2, and only then. It is `knock` in `js/music.js`, the shared player of all the songs, and `STAR_MUSIC` in `index.html` picks it for the `mines` theme. It loads during the flight to the star, comes in fast (so the three knocks are clear at the landing), rewinds when the hero leaves (each visit starts with the knocks), and the arpeggio waits while it plays. Volume 0.42, so the big ape's thuds underneath (the clue to follow) still come through. Open: the thuds and the song's own knocks overlap at the landing; to be judged by ear.
+
 ## Level table (`index.html`)
 
 `LEVELS = { wind: WindGardens, mines: BasaltMines }` and `levelOf(planet)` replace the old `theme === "wind"` checks. A level module answers: `configure`, `shapeGround`, `wantsSmooth`, `smoothGround`, `build`, `attach`, `reset`, `update`, `query`, `drift`, `constrain`, `punchHit`, `aim`, `scripted`, `isLocked`, `respawn`, `cameraFloor`, `cameraFocus`, `cameraShot`, `cameraHint`, `colliders`, `exitDir`, `dayAxis`, `hudText`. The shared environment passed to `attach` gained `shake(v)` and `refreshHud()`.
