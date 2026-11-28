@@ -239,6 +239,10 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const Audio = {
   ctx: null, master: null, musicGain: null, on: true,
   nextNote: 0, step: 0, root: 220,
+  // Recorded background tracks, one per star theme (the other stars keep the soft arpeggio below).
+  // A plain <audio> element, so it also plays when the page is opened without a server.
+  TRACKS: { swamp: { src: "assets/music/glowing-mushroom.mp3", vol: 0.5 } },
+  track: null, trackTheme: null, trackVol: 0, wantTheme: null, retryAt: 0,
   init() {
     if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -255,6 +259,7 @@ const Audio = {
   resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); },
   setOn(v) {
     this.on = v;
+    if (this.track) this.track.muted = !v;
     if (this.master) this.master.gain.setTargetAtTime(v ? 0.9 : 0, this.ctx.currentTime, 0.05);
   },
   tone(freq, dur, type, vol, sweepTo) {
@@ -301,8 +306,39 @@ const Audio = {
     notes.forEach((n, i) => setTimeout(() => this.tone(n, 0.6, "triangle", 0.2), i * 130));
   },
   setKey(root) { this.root = root; },
+  // Which star's recorded track should play now (null: none). Called every frame.
+  setTheme(theme) { this.wantTheme = this.TRACKS[theme] ? theme : null; },
+  // Fades the recorded track in and out, and silences the arpeggio while it plays.
+  updateTrack(dt) {
+    const want = this.wantTheme;
+    if (want && want !== this.trackTheme && this.trackVol < 0.01) {      // switch to (or start) the wanted track
+      if (!this.track) {
+        this.track = document.createElement("audio");
+        this.track.loop = true; this.track.preload = "auto";
+        this.track.muted = !this.on;
+      }
+      this.track.src = this.TRACKS[want].src;
+      this.trackTheme = want;
+    }
+    const target = want && want === this.trackTheme ? 1 : 0;
+    this.trackVol += clamp(target - this.trackVol, -dt / 1.5, dt / 2.5);   // out in 1.5 s, in over 2.5 s
+    const tr = this.track;
+    if (!tr) return;
+    tr.volume = clamp(this.trackVol, 0, 1) * this.TRACKS[this.trackTheme].vol;
+    if (target && tr.paused) {
+      const now = performance.now();
+      if (now > this.retryAt) {            // the browser may refuse until the first tap: try again soon
+        this.retryAt = now + 1000;
+        const pr = tr.play(); if (pr && pr.catch) pr.catch(() => {});
+      }
+    } else if (!target && this.trackVol < 0.01 && !tr.paused) {
+      tr.pause(); tr.currentTime = 0;
+    }
+    if (this.ctx) this.musicGain.gain.setTargetAtTime(0.16 * (1 - this.trackVol), this.ctx.currentTime, 0.4);
+  },
   // gentle pentatonic arpeggio, scheduled from the render loop
-  update() {
+  update(dt) {
+    this.updateTrack(dt || 0.016);
     if (!this.ctx || !this.on) return;
     const t = this.ctx.currentTime;
     while (this.nextNote < t + 0.3) {
@@ -1844,7 +1880,8 @@ function animate() {
   Models.update(dt);
   updateAvatar();
   Characters.update(dt);
-  Audio.update();
+  Audio.setTheme(state === S.PLAYING && active ? active.def.theme : null);
+  Audio.update(dt);
   starfield.position.copy(camera.position);
   updatePlanetDetail();
   DayCycle.apply(camera, P.pos, active && active.center);
