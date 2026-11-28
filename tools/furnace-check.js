@@ -30,6 +30,8 @@ const H = require("./harness");
   r = await ev(() => { const d = window.__dbg; window.goToStar(3); d.step(30); const f = d.FurnaceMoon.debug; return { planet: d.active.name, power: d.P.hasPower, painted: d.painted, cp: f.checkpoint, hud: document.getElementById("shards").textContent }; });
   c.ok("goToStar(3) lands on the Furnace Moon with the power punch, not painted", r.planet === "Furnace Moon" && r.power && !r.painted && r.cp === "landing", r);
   await shot("landing");
+  r = await ev(() => { const d = window.__dbg; return { want: d.Audio.want, el: !!d.Audio.tracks.volcanic.el, src: d.Audio.tracks.volcanic.src }; });
+  c.ok("the volcanic song is asked for from the landing", r.want === "volcanic" && r.el && /the-volcanic-path\.mp3$/.test(r.src), r);
 
   // the side slope: he rolls a paint ball across the path, and it hurts
   r = await ev(() => {
@@ -108,7 +110,7 @@ const H = require("./harness");
       d.place(j.s - 1.6, j.l, f.terrainH(j.s - 1.6, j.l) + 0.05); d.step(3);
       const a = f.worldPos(j.s - 1.6, j.l, 0), t = f.worldPos(j.s, j.l, 0);
       d.P.face.copy(t.sub(a)).normalize(); d.camDir.copy(d.P.face); d.punch(); d.step(20);
-      log.push({ deflected, blind, hp: f.jr.hp });
+      log.push({ deflected, blind, hp: f.jr.hp, want: d.Audio.want });
       d.step(90);
     }
     d.step(200);
@@ -116,6 +118,7 @@ const H = require("./harness");
   });
   c.ok("a paint ball he is not sent back hurts the hero", r.hurt, r);
   c.ok("punching the ball back blinds him, then a punch hits (3 times)", r.log.length === 3 && r.log.every(x => x.deflected && x.blind) && r.log[2].hp === 0, r.log);
+  c.ok("the song keeps playing through all of fight 1", r.log.every(x => x.want === "volcanic"), r.log);
   c.ok("he flees and the paint wall is gone", (r.phase === "flee" || r.phase === "gone") && r.wall, r);
 
   // the villain arrives and locks the friends in cages
@@ -127,6 +130,9 @@ const H = require("./harness");
     return { cages: f.cages, bowser: f.bowser.state };
   });
   c.ok("the villain lands and the four friends are caged", r.cages.every(x => x === "locked"), r);
+  r = await ev(() => ({ want: window.__dbg.Audio.want }));
+  c.ok("the song is gone once Bowser is in the crater", r.want === null, r);
+  r = await ev(() => { const d = window.__dbg; d.Audio.setTrack(null); return 1; });
   await shot("cages");
 
   // a cage: a normal punch does nothing, his charge cracks it when the hero dodges, a power punch frees the friend

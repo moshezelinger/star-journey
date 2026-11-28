@@ -40,6 +40,10 @@ Following `docs/characters.md`: the brother (with his lit lantern) and the young
 
 The scattered basalt rocks near the walkable belt are solid (in buckets along `s`, low ones can be jumped onto); none sit at the bridge ends, by the shore coins or at the shrine.
 
+## Music
+
+"The Volcanic Path" (`assets/music/the-volcanic-path.mp3`, 3 minutes, loops) plays from the landing through the slope, the bridges, the shrine and fight 1, until Bowser lands in the crater (Moshe, 28.11.2026). It fades in over 2.5 s and out over 1.5 s, and the synth arpeggio is silent while it plays. The level asks for it through `music()`; `Audio.setTrack(name)` in `index.html` does the rest (the sound button mutes it, the menu and the victory screen stop it). It does not come back after Bowser arrives, not even after a respawn. A new track is one more entry in `Audio.tracks`.
+
 ## Performance
 
 Headless Chromium, software rendering, `node tools/furnace-perf.js`: landing 134 draw calls and 250 thousand triangles (the whole crater in view), bridges 105 / 192 thousand, fight 1 26 / 115 thousand, fight 2 22 / 113 thousand, edge 16 / 113 thousand. The old garden planet at the same spots: 13 to 39 calls, 141 to 181 thousand. Star 1 is unchanged (321 calls and 314 thousand before, 319 and 310 thousand after). The lava is one unlit shader for all lava surfaces, with no per-frame CPU work. `?fx=-jungle` turns the rocks off, `?fx=-islands` the volcanoes and the citadel.

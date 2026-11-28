@@ -239,6 +239,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const Audio = {
   ctx: null, master: null, musicGain: null, on: true,
   nextNote: 0, step: 0, root: 220,
+  // recorded music (one level asks for a track by name; it fades in and out and replaces the synth arpeggio while it plays)
+  tracks: { volcanic: { src: "assets/music/the-volcanic-path.mp3", vol: 0.55, fadeIn: 2.5, fadeOut: 1.5, el: null, level: 0 } },
+  want: null, trackClock: 0,
   init() {
     if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -253,6 +256,33 @@ const Audio = {
     this.nextNote = this.ctx.currentTime + 0.2;
   },
   resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); },
+  setTrack(name) {
+    name = name || null;
+    if (name === this.want) return;
+    this.want = name;
+    const T = name && this.tracks[name];
+    if (T && !T.el) {
+      const el = document.createElement("audio");
+      el.src = T.src; el.loop = true; el.preload = "auto"; el.volume = 0;
+      T.el = el;
+    }
+  },
+  updateTracks() {
+    const now = performance.now(), dt = Math.min(0.1, (now - (this.trackClock || now)) / 1000);
+    this.trackClock = now;
+    for (const n in this.tracks) {
+      const T = this.tracks[n];
+      if (!T.el) continue;
+      const wanted = n === this.want;
+      const goal = wanted && this.on ? T.vol : 0;
+      const step = T.vol * dt / (goal > T.level ? T.fadeIn : T.fadeOut);
+      T.level += Math.max(-step, Math.min(step, goal - T.level));
+      T.el.volume = Math.max(0, Math.min(1, T.level));
+      if (wanted && !document.hidden) { if (T.el.paused) { const p = T.el.play(); if (p && p.catch) p.catch(() => {}); } }
+      else if (!T.el.paused && (document.hidden || (!wanted && T.level <= 0.001))) { T.el.pause(); if (!wanted) T.el.currentTime = 0; }
+    }
+  },
+  get trackPlaying() { return !!(this.want && this.tracks[this.want].el && !this.tracks[this.want].el.paused); },
   setOn(v) {
     this.on = v;
     if (this.master) this.master.gain.setTargetAtTime(v ? 0.9 : 0, this.ctx.currentTime, 0.05);
@@ -303,8 +333,10 @@ const Audio = {
   setKey(root) { this.root = root; },
   // gentle pentatonic arpeggio, scheduled from the render loop
   update() {
+    this.updateTracks();
     if (!this.ctx || !this.on) return;
     const t = this.ctx.currentTime;
+    if (this.want) { this.nextNote = Math.max(this.nextNote, t + 0.2); return; }   // a recorded track is playing
     while (this.nextNote < t + 0.3) {
       const scale = [0, 2, 4, 7, 9, 12, 9, 7];
       const semis = scale[this.step % scale.length];
@@ -1298,6 +1330,7 @@ function updatePlaying(dt) {
 
   const wg = levelOf(active);
   const ab = (wg && wg.abilities) ? wg.abilities() : null;    // star 3: Luigi on the dinosaur (flutter, tongue)
+  Audio.setTrack(wg && wg.music ? wg.music() : null);          // star 4: the volcanic song before Bowser arrives
   if (wg) DayCycle.update(dt);         // only while playing, so pausing pauses the day
   if (wg && !wg.isLocked()) {          // on the balcony, swing the camera to the side of the blades
     const hintDir = camYawIdle > 2 ? wg.cameraHint(P) : null;
@@ -1835,6 +1868,7 @@ function animate() {
     }
   }
 
+  if (state !== S.PLAYING) Audio.setTrack(null);
   if (state === S.MENU) updateMenuCamera(dt);
   else if (state === S.PLAYING) { if (!dbgPause) { updatePlaying(dt); updateCameraFollow(dt, P.grounded ? 0 : 1.2); } }
   else if (state === S.TRANSITION) updateTransition(dt);
@@ -1935,7 +1969,7 @@ landOnPlanet(0);
 state = S.MENU;
 // test/QA access (see docs/wind-gardens.md)
 let dbgPause = false;
-window.__dbg = { P, camera, get camDir() { return camDir; }, WindGardens, BasaltMines, InkSwamp, FurnaceMoon, QUALITY, Models, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },
+window.__dbg = { P, camera, Audio, get camDir() { return camDir; }, WindGardens, BasaltMines, InkSwamp, FurnaceMoon, QUALITY, Models, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },
   get ready() { return !!player.userData.ready; },
   // place the hero at route coordinates (s, l, height above the base sphere), facing +s
   place(s, l, h, back) {

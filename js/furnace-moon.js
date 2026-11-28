@@ -1330,6 +1330,8 @@ const FurnaceMoon = (() => {
     if (S.jr.phase !== "slope") return S.coins > 0 ? "Coins for the shrine (" + S.coins + "/" + LAYOUT.shrine.cost + ")" : "Find the real bridge";
     return "Down into the crater";
   }
+  // the recorded song plays from the landing, over the slope, the bridges and the first fight, until Bowser arrives
+  function music() { return (S.bowser.state === "off" && !S.caged && !S.beaten && !S.hanging && !S.won) ? "volcanic" : null; }
   function hudText() { const n = (env && env.P && env.P.coins) || 0; return "🌋 " + objective() + (n ? "   🪙 " + n : ""); }
 
   const debug = {
@@ -1360,7 +1362,7 @@ const FurnaceMoon = (() => {
   return {
     configure, shapeGround, smoothGround, wantsSmooth, exitDir, build, attach, reset, update, query, drift, constrain,
     punchHit, aim, scripted() {}, objective, hudText, debug, colliders, cameraHint, cameraFloor, cameraShot, cameraFocus, dayAxis,
-    avatar, abilities,
+    avatar, abilities, music,
     respawn: (P, hooks, restoreHealth) => respawn(P, hooks, restoreHealth),
     isLocked: () => false,
     get layout() { return LAYOUT; }
