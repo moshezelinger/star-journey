@@ -1,0 +1,8 @@
+Music of Star Journey: five instrumentals made by Moshe with Suno (account "mosheze86"), 2026-11.
+Used by the project owner in this fan project. Played by js/music.js.
+
+lantern-signal.mp3      The Lantern Signal      2:34  the opening screen, the star picker and star 1 (Wind Gardens)
+three-knock-trail.mp3   The Three-Knock Trail   2:28  star 2 (Basalt Mines). Re-encoded to 128 kbps MP3 for the game.
+glowing-mushroom.mp3    Glowing Mushroom        3:20  star 3 (Ink Swamp)
+the-volcanic-path.mp3   The Volcanic Path       3:00  star 4 (Furnace Moon), from the landing until Bowser lands
+volcanos-call.mp3       The Volcano's Call      2:49  star 4, the Bowser fight, until he falls
