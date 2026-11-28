@@ -300,7 +300,42 @@ const Audio = {
     const notes = [523, 659, 784, 1047, 1319];
     notes.forEach((n, i) => setTimeout(() => this.tone(n, 0.6, "triangle", 0.2), i * 130));
   },
-  setKey(root) { this.root = root; },
+  // A recorded track (a level's boss music). It loops, fades in and out, goes through the same
+  // master gain as everything else (so the Sound switch mutes it), and the synthesized
+  // music steps aside while it plays. One track at a time.
+  tracks: {}, cur: null, wanted: null,
+  loadTrack(url) {
+    if (!this.ctx) return Promise.resolve(null);
+    const t = this.tracks[url] || (this.tracks[url] = { buf: null, p: null });
+    if (!t.p) t.p = fetch(url).then(r => r.arrayBuffer()).then(b => new Promise((ok, no) => this.ctx.decodeAudioData(b, ok, no)))
+      .then(buf => (t.buf = buf)).catch(() => { t.p = null; return null; });   // a failed load: the game just stays with the synthesized music
+    return t.p;
+  },
+  playTrack(url, vol, fade) {
+    this.wanted = url;
+    if (!this.ctx || this.cur) return;
+    this.loadTrack(url).then(buf => {
+      if (!buf || this.wanted !== url || this.cur) return;      // stopped (or restarted) while it was loading
+      const t = this.ctx.currentTime;
+      const src = this.ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + fade);
+      src.connect(g); g.connect(this.master); src.start(t);
+      this.cur = { url, src, g, key: this.root };
+      this.musicGain.gain.cancelScheduledValues(t); this.musicGain.gain.setTargetAtTime(0, t, 0.4);
+    });
+  },
+  stopTrack(fade) {
+    this.wanted = null;
+    const c = this.cur; if (!c) return;
+    this.cur = null;
+    const t = this.ctx.currentTime;
+    c.g.gain.cancelScheduledValues(t); c.g.gain.setValueAtTime(c.g.gain.value, t); c.g.gain.linearRampToValueAtTime(0, t + fade);
+    c.src.stop(t + fade + 0.05);
+    this.musicGain.gain.cancelScheduledValues(t); this.musicGain.gain.setTargetAtTime(0.16, t + fade * 0.6, 0.8);
+  },
+  // a new key means another planet: its recorded track does not follow the hero there
+  setKey(root) { if (this.cur && root !== this.cur.key) this.stopTrack(1); this.root = root; },
   // gentle pentatonic arpeggio, scheduled from the render loop
   update() {
     if (!this.ctx || !this.on) return;
@@ -1935,7 +1970,7 @@ landOnPlanet(0);
 state = S.MENU;
 // test/QA access (see docs/wind-gardens.md)
 let dbgPause = false;
-window.__dbg = { P, camera, get camDir() { return camDir; }, WindGardens, BasaltMines, InkSwamp, FurnaceMoon, QUALITY, Models, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },
+window.__dbg = { P, camera, Audio, get camDir() { return camDir; }, WindGardens, BasaltMines, InkSwamp, FurnaceMoon, QUALITY, Models, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },
   get ready() { return !!player.userData.ready; },
   // place the hero at route coordinates (s, l, height above the base sphere), facing +s
   place(s, l, h, back) {

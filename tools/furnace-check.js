@@ -129,6 +129,15 @@ const H = require("./harness");
   c.ok("the villain lands and the four friends are caged", r.cages.every(x => x === "locked"), r);
   await shot("cages");
 
+  // the recorded fight music: loaded in advance, loops, and the synthesized music steps aside
+  r = await ev(async () => {
+    const A = window.__dbg.Audio;
+    for (let i = 0; i < 100 && !A.cur; i++) await new Promise(res => setTimeout(res, 100));
+    const c = A.cur;
+    return { playing: !!c, url: c && c.url, loop: c && c.src.loop, secs: c && Math.round(c.src.buffer.duration), ctx: A.ctx && A.ctx.state };
+  });
+  c.ok("the fight music plays once the villain has landed (looping, full track)", r.playing && r.loop && r.secs > 160 && /volcanos-call\.mp3$/.test(r.url), r);
+
   // a cage: a normal punch does nothing, his charge cracks it when the hero dodges, a power punch frees the friend
   async function freeCage(i) {
     return ev((i) => {
@@ -267,6 +276,8 @@ const H = require("./harness");
   c.ok("walking into him does not beat him", r.walk === false, r);
   c.ok("a dash while he pants after the slam beats him", r.dash === true, r);
   await shot("beaten");
+  r = await ev(() => { const A = window.__dbg.Audio; return { cur: !!A.cur, wanted: A.wanted }; });
+  c.ok("the fight music ends when he is beaten", r.cur === false && r.wanted === null, r);
 
   // the ending: his son hangs on the edge, the hero reaches out, the road home, the victory screen
   r = await ev(() => {
@@ -313,6 +324,15 @@ const H = require("./harness");
     return { count: list.length, r: +t.r.toFixed(2), gap: +(Math.hypot(c.s - ts, c.l - tl) - t.r).toFixed(2), passed: c.s > ts + t.r };
   }, [3, "FurnaceMoon", "rockColliders"]);
   c.ok("a big rock blocks the way", !r.none && r.gap > -0.15 && !r.passed, r);
+  // a restart or another star ends the track too
+  r = await ev(async () => {
+    const d = window.__dbg, A = d.Audio, f = d.FurnaceMoon;
+    const play = async () => { A.playTrack("assets/music/volcanos-call.mp3", 0.4, 0.1); for (let i = 0; i < 100 && !A.cur; i++) await new Promise(res => setTimeout(res, 100)); return !!A.cur; };
+    const a = await play(); f.reset(); const afterReset = !!A.cur;
+    const b = await play(); A.setKey(A.root + 1); const afterOtherStar = !!A.cur;
+    return { a, afterReset, b, afterOtherStar };
+  });
+  c.ok("a restart and another star both end the track", r.a && r.b && !r.afterReset && !r.afterOtherStar, r);
   c.ok("no page errors", h.errors.length === 0, h.errors);
   const failed = c.report();
   await h.close();

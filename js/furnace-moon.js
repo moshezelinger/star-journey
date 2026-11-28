@@ -29,6 +29,10 @@ const FurnaceMoon = (() => {
   const smooth = (a, b, x) => { const k = clamp((x - a) / (b - a), 0, 1); return k * k * (3 - 2 * k); };
   const band = (s, a, b, w) => smooth(a, a + w, s) * (1 - smooth(b - w, b, s));
 
+  // the recorded music of the Bowser fight (assets/music/volcanos-call.mp3): from the moment he lands
+  // until he falls. Its first seconds are distant drums and a low rumble, which fits his landing.
+  const FIGHT_MUSIC = { url: "assets/music/volcanos-call.mp3", vol: 0.42, fadeIn: 2.5, fadeOut: 3 };
+
   const LAYOUT = {
     lake: { s0: 18, s1: 42 },
     bridges: [{ l: -9 }, { l: 0 }, { l: 9 }], realBridge: 0, bridgeHalf: 1.5,
@@ -582,6 +586,7 @@ const FurnaceMoon = (() => {
   // ============================================================
   function reset() {
     S.t = 0; S.splits = []; S.cp = 0; S.hints = {}; S.coins = 0; S.slabCoins = 0;
+    if (env) env.Audio.stopTrack(0.3);                  // a restart: the fight music ends
     S.hasDeflect = false; S.hasDash = false;
     S.fake = LAYOUT.bridges.map(() => ({ gone: false, t: 0, steps: 0 }));
     S.wrongBridges = 0;
@@ -595,7 +600,7 @@ const FurnaceMoon = (() => {
     S.slabsUp = 0; S.dkT = 0;
     S.shieldT = 0; S.final = false; S.beaten = false; S.beatenT = 0;
     S.hanging = false; S.saved = false; S.savedT = 0; S.won = false;
-    S.introT = -1;
+    S.introT = -1; S.musicLoading = false;
     for (const b of bridgeSolids) b.gone = false;
     wallSolid.gone = false;
     for (const c of cageSolids) c.gone = true;
@@ -848,6 +853,7 @@ const FurnaceMoon = (() => {
     if (t > 2.4 && Bw.state === "off") {
       Bw.state = "land"; Bw.t = 0; bowser.visible = true;
       ctx.Audio.roar();
+      ctx.Audio.playTrack(FIGHT_MUSIC.url, FIGHT_MUSIC.vol, FIGHT_MUSIC.fadeIn);
     }
     if (Bw.state === "land") {
       Bw.t += dt;
@@ -1130,6 +1136,7 @@ const FurnaceMoon = (() => {
     S.beaten = true; S.beatenT = 0; S.wave = null; S.waveMesh.visible = false; S.fireRing.visible = false;
     S.flames.forEach(f => { f.visible = false; });
     split("beaten");
+    ctx.Audio.stopTrack(FIGHT_MUSIC.fadeOut);
     ctx.Audio.boom(); ctx.Audio.roar(); ctx.shake(0.9);
     ctx.Particles.spawn(worldPos(S.bowser.s, S.bowser.l, 2), 0xffe060, 60, 8);
     ctx.toast("Bowser is beaten!", 2600);
@@ -1252,6 +1259,7 @@ const FurnaceMoon = (() => {
   function update(dt, ctx) {
     const P = ctx.P;
     S.t += dt;
+    if (!S.musicLoading) { S.musicLoading = true; ctx.Audio.loadTrack(FIGHT_MUSIC.url); }   // decoded by the time he lands
     if (lavaMat) lavaMat.uniforms.time.value = S.t;
     const c = coordsAt(P.pos), hh = heightAt(P.pos);
     updateShrine(ctx, c.s, c.l);

@@ -28,6 +28,10 @@ Checkpoints: `landing` 0, `shore` 44, `arena` 59, `crater` 86. Falling into lava
   - The big ape lifts three stone slabs. 9 coins under them unlock the **dash**.
 - **The last round** (all four free): a ring of fire surrounds him. It hurts without the fire mushroom (20 s of protection). He only slams now, and pants for 2.4 s after each slam (dizzy stars). Only a dash into him during that pause beats him; walking into him does not. A dash counts until the hero lands, so one that ran out of speed just before reaching him still hits.
 
+## Music
+
+The Bowser fight has a recorded track, "The Volcano's Call" (`assets/music/volcanos-call.mp3`, 2:49, 128 kbps, made with Suno). It starts as he leaps down from the citadel (`FIGHT_MUSIC` in `js/furnace-moon.js`: volume 0.42, 2.5 s fade in), loops for the whole fight including the last round, and fades out over 3 s when he is beaten. The synthesized music steps aside while it plays and comes back after. The file is fetched and decoded on the first frame of the star, so it is ready when he lands. `Audio.playTrack`, `stopTrack` and `loadTrack` in `index.html` are generic; the Sound switch mutes the track, a restart or another star ends it, and if the file cannot load the fight just runs without it.
+
 ## Abilities added on this star
 
 - **Deflect punch:** a punch within 3.4 units of a paint ball rolling at the hero sends it back to the young villain. The level handles it inside `punchHit`.
@@ -46,7 +50,7 @@ Headless Chromium, software rendering, `node tools/furnace-perf.js`: landing 134
 
 ## Tests
 
-`node tools/furnace-check.js` (32 checks): landing state, the paint balls on the slope, a fake bridge and the real one, the shrine and its price, a ball that is not sent back, three deflect rounds, the paint wall, the cages, four cages cracked by his charge and opened by a power punch (and not by a normal one), his rage, each friend's job, the dash coins and the dash itself, the ring of fire with and without the mushroom, the shockwave on the ground and in a jump, the last blow (walking in fails, a dash works), the ending and the victory screen, the camera at 27 spot and angle combinations, and no page errors. `--shots` writes `tools/out/furnace-*.png`. `node tools/furnace-frames.js` writes frames of the main moments. `__dbg.goTo(3)` or Shift+4 lands on star 4.
+`node tools/furnace-check.js` (35 checks): landing state, the paint balls on the slope, a fake bridge and the real one, the shrine and its price, a ball that is not sent back, three deflect rounds, the paint wall, the cages, four cages cracked by his charge and opened by a power punch (and not by a normal one), his rage, each friend's job, the dash coins and the dash itself, the ring of fire with and without the mushroom, the shockwave on the ground and in a jump, the last blow (walking in fails, a dash works), the ending and the victory screen, the camera at 27 spot and angle combinations, and no page errors. `--shots` writes `tools/out/furnace-*.png`. `node tools/furnace-frames.js` writes frames of the main moments. `__dbg.goTo(3)` or Shift+4 lands on star 4.
 
 Not tested: real devices, touch, frame rate, a child.
 
