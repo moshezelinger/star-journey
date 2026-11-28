@@ -48,6 +48,15 @@ Built in code in `js/characters.js` (`docs/characters.md`), as original designs:
 
 The big ape still shows the installed `dk` model by default ("Donkey Kong 64" by chicosantossaraiva, CC-BY 4.0); `?models=code` shows the code version. The other slots in `js/models.js` (`luigi`, `goomba`, `paratroopa`, `buzzy`, `ukiki`, `bowserjr`) are not installed, so the code characters show.
 
+## Music (decision by Moshe, 28.11.2026)
+
+"The Three-Knock Trail" (`assets/music/three-knock-trail.mp3`, 2:28, 128 kbps, 2.3MB; Moshe's own Suno track: three knocks on log drums, a marimba groove, a muted brass and flute theme) plays on star 2 only. It replaces the generated arpeggio while the hero is on the star, and only then.
+
+- **Where it is wired:** `Audio.TRACKS` and `Audio.setTrack()` in `index.html`. The render loop asks for `"mines"` while the state is PLAYING on the mines star; any other state or star asks for none. The file streams through an `<audio>` element (no decoding to memory) and loads during the flight to the star (`preloadTrack`).
+- **Behaviour:** fades in over 0.35 s from the start (so the three knocks come in clearly, right at the landing) or 1.2 s mid-song, fades out over 0.8 s, then stops and rewinds, so every visit starts with the knocks. It loops. Volume 0.42 so DK's thuds underneath (the clue to follow) still come through. The Sound button mutes it without losing its place, a hidden tab pauses it, and a browser that wants a tap first starts it on the first tap (`Audio.resume`).
+- **Adding a track for another star:** one line in `Audio.TRACKS`, one in the `setTrack` call in `animate`.
+- **Open:** the thuds the game plays (the story cue) and the song's own knocks now overlap at the landing; to be judged by ear. The song restarts from the beginning when it loops, three knocks included.
+
 ## Level table (`index.html`)
 
 `LEVELS = { wind: WindGardens, mines: BasaltMines }` and `levelOf(planet)` replace the old `theme === "wind"` checks. A level module answers: `configure`, `shapeGround`, `wantsSmooth`, `smoothGround`, `build`, `attach`, `reset`, `update`, `query`, `drift`, `constrain`, `punchHit`, `aim`, `scripted`, `isLocked`, `respawn`, `cameraFloor`, `cameraFocus`, `cameraShot`, `cameraHint`, `colliders`, `exitDir`, `dayAxis`, `hudText`. The shared environment passed to `attach` gained `shake(v)` and `refreshHud()`.

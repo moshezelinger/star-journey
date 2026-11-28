@@ -239,6 +239,10 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const Audio = {
   ctx: null, master: null, musicGain: null, on: true,
   nextNote: 0, step: 0, root: 220,
+  // Recorded level music (one track at a time, streamed through an <audio> element so it is not decoded to memory).
+  // TRACKS: name -> file and loudness. The generated arpeggio below fades out while a track plays.
+  TRACKS: { mines: { src: "assets/music/three-knock-trail.mp3", vol: 0.42 } },
+  track: null, trackEl: null, trackWant: null, trackVol: 0, trackBlocked: false,
   init() {
     if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -252,10 +256,53 @@ const Audio = {
     this.musicGain.connect(this.master);
     this.nextNote = this.ctx.currentTime + 0.2;
   },
-  resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); },
+  resume() {
+    if (this.ctx && this.ctx.state === "suspended") this.ctx.resume();
+    if (this.trackBlocked) this.playTrack();       // the browser wanted a tap first
+  },
   setOn(v) {
     this.on = v;
     if (this.master) this.master.gain.setTargetAtTime(v ? 0.9 : 0, this.ctx.currentTime, 0.05);
+  },
+  // Which recorded track should be heard now (a TRACKS name, or null for the generated music).
+  setTrack(name) { this.trackWant = name && this.TRACKS[name] ? name : null; },
+  // Start downloading a track ahead of time (during the flight).
+  preloadTrack(name) { if (this.TRACKS[name]) this.trackElement(name); },
+  trackElement(name) {
+    if (this.trackEl && this.track === name) return this.trackEl;
+    if (this.trackEl) { this.trackEl.pause(); this.trackEl.removeAttribute("src"); this.trackEl.load(); }
+    const el = document.createElement("audio");
+    el.src = this.TRACKS[name].src;
+    el.loop = true; el.preload = "auto"; el.volume = 0;
+    this.trackEl = el; this.track = name; this.trackVol = 0;
+    return el;
+  },
+  playTrack() {
+    const p = this.trackEl && this.trackEl.play();
+    this.trackBlocked = false;
+    if (p && p.catch) p.catch(() => { this.trackBlocked = true; });
+  },
+  // fade the track and the generated music against each other; runs every frame, on real time (the frame dt is capped)
+  updateTrack() {
+    const now = performance.now(), dt = Math.min(0.25, (now - (this.trackT || now)) / 1000); this.trackT = now;
+    const want = this.trackWant;
+    if (want) {
+      const el = this.trackElement(want);
+      if (document.hidden) { if (!el.paused) el.pause(); }          // a hidden tab keeps its place
+      else if (el.paused && !this.trackBlocked) this.playTrack();
+    }
+    if (!this.trackEl) return;
+    this.trackEl.muted = !this.on;                                    // the sound button silences it without losing the place
+    const max = this.TRACKS[this.track].vol;
+    const fadeIn = this.trackEl.currentTime < 3 ? 0.35 : 1.2;             // from the start the three knocks come in clearly
+    if (want) this.trackVol = Math.min(max, this.trackVol + max * dt / fadeIn);
+    else this.trackVol = Math.max(0, this.trackVol - max * dt / 0.8);
+    this.trackEl.volume = clamp(this.trackVol, 0, 1);
+    if (!want && this.trackVol === 0 && !this.trackEl.paused) {
+      this.trackEl.pause();
+      try { this.trackEl.currentTime = 0; } catch (e) {}       // the next visit starts with the three knocks
+    }
+    if (this.musicGain && this.ctx) this.musicGain.gain.setTargetAtTime(this.trackWant ? 0 : 0.16, this.ctx.currentTime, 0.6);
   },
   tone(freq, dur, type, vol, sweepTo) {
     if (!this.ctx || !this.on) return;
@@ -303,8 +350,10 @@ const Audio = {
   setKey(root) { this.root = root; },
   // gentle pentatonic arpeggio, scheduled from the render loop
   update() {
+    this.updateTrack();
     if (!this.ctx || !this.on) return;
     const t = this.ctx.currentTime;
+    if (this.trackWant) { this.nextNote = t + 0.2; return; }      // recorded music is playing: no generated notes
     while (this.nextNote < t + 0.3) {
       const scale = [0, 2, 4, 7, 9, 12, 9, 7];
       const semis = scale[this.step % scale.length];
@@ -1844,6 +1893,9 @@ function animate() {
   Models.update(dt);
   updateAvatar();
   Characters.update(dt);
+  // recorded level music: Basalt Mines plays "The Three-Knock Trail" while the hero is on the star
+  Audio.setTrack(state === S.PLAYING && active && active.def.theme === "mines" ? "mines" : null);
+  if (state === S.TRANSITION && transition && planets[transition.next].def.theme === "mines") Audio.preloadTrack("mines");
   Audio.update();
   starfield.position.copy(camera.position);
   updatePlanetDetail();
@@ -1952,7 +2004,7 @@ window.__dbg = { P, camera, get camDir() { return camDir; }, WindGardens, Basalt
   get health() { return P.health; }, set health(v) { P.health = v; },
   setInvuln(v) { P.invuln = v; },
   setCam(pitch, zoom) { if (pitch !== undefined) camPitch = pitch; if (zoom !== undefined) camZoom = zoom; },
-  DayCycle,
+  DayCycle, Audio,
   get camFloor() { return camFloorAt(camera.position); },
   get cam() { return { pitch: camPitch, zoom: camZoom, dist: camera.position.distanceTo(P.pos), h: camera.position.distanceTo(active.center) - active.radius }; }, step(n, dt) { for (let i = 0; i < n; i++) { if (state === S.PLAYING) { updatePlaying(dt || 1 / 60); updateCameraFollow(dt || 1 / 60, P.grounded ? 0 : 1.2); } Particles.update(dt || 1 / 60); } },  get state() { return state; }, get active() { return active; }, planets, jump() { jumpQueued = true; }, punch() { punchQueued = true; }, keys };
 animate();

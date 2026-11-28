@@ -21,6 +21,26 @@ const H = require("./harness");
   });
   c.ok("lands on Basalt Mines without the power punch", r.planet === "Basalt Mines" && r.hasPower === false && Math.abs(r.h) < 0.1, r);
 
+  // ---------- level music: "The Three-Knock Trail" ----------
+  // The page runs real frames (only the game steps are scripted), so the fade needs real time.
+  r = await ev(async () => {
+    const d = window.__dbg, A = d.Audio, wait = ms => new Promise(x => setTimeout(x, ms));
+    const canPlay = !!document.createElement("audio").canPlayType("audio/mpeg");
+    d.goTo(1); await wait(1500);
+    const on = { want: A.trackWant, vol: A.trackVol, paused: A.trackEl ? A.trackEl.paused : null, t: A.trackEl ? A.trackEl.currentTime : -1, gen: A.musicGain.gain.value };
+    d.goTo(0); await wait(2200);
+    const off = { want: A.trackWant, vol: A.trackVol, paused: A.trackEl ? A.trackEl.paused : null, t: A.trackEl ? A.trackEl.currentTime : -1 };
+    d.goTo(1); await wait(600);
+    const again = { vol: A.trackVol, t: A.trackEl.currentTime };
+    return { canPlay, on, off, again };
+  });
+  c.ok("the music is asked for on star 2 and not on star 1", r.on.want === "mines" && r.off.want === null, r);
+  c.ok("the track fades in and plays (browser has mp3)", !r.canPlay || (r.on.vol > 0.3 && r.on.paused === false && r.on.t > 0.5), r.on);
+  c.ok("the generated music steps aside while it plays", !r.canPlay || r.on.gen < 0.1, r.on);
+  c.ok("leaving the star fades it out, stops it and rewinds", r.off.vol === 0 && r.off.paused === true && r.off.t === 0, r.off);
+  c.ok("coming back starts again from the three knocks", !r.canPlay || r.again.t < 1.2, r.again);
+  await ev(() => { window.__dbg.goTo(1); window.__dbg.step(20); });
+
   // ---------- power glove and cracked rock ----------
   r = await ev(() => {
     const d = window.__dbg, bm = d.BasaltMines.debug;

@@ -21,7 +21,7 @@ const THREE_MIN = require.resolve("three/build/three.min.js", { paths: [__dirnam
 const GLTF = require.resolve("three/examples/js/loaders/GLTFLoader.js", { paths: [__dirname] });
 
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".glb": "model/gltf-binary",
-  ".gltf": "model/gltf+json", ".bin": "application/octet-stream", ".png": "image/png", ".jpg": "image/jpeg", ".css": "text/css" };
+  ".gltf": "model/gltf+json", ".bin": "application/octet-stream", ".png": "image/png", ".jpg": "image/jpeg", ".css": "text/css", ".mp3": "audio/mpeg" };
 
 function serve() {
   return new Promise(resolve => {

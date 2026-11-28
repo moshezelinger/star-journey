@@ -44,4 +44,5 @@ python3 -m http.server 8765
 - Yoshi model: "DS DSi - Super Mario 64 DS - Yoshi" by DokigerElRojito, CC-BY-4.0, [source](https://sketchfab.com/3d-models/ds-dsi-super-mario-64-ds-yoshi-8772d361a56949c0902401b73b1e749e) (see `assets/yoshi/license.txt`).
 - Toad model: "TOAD" by ijosephpinta, CC-BY-4.0, [source](https://sketchfab.com/3d-models/toad-be009511be534d3e9da798f120dcd295) (see `assets/toad/license.txt`).
 - Piranha Plant model: "Piranha Plant" by Marcus Vinicius, CC-BY-4.0, [source](https://sketchfab.com/3d-models/piranha-plant-18b880dc57d34eea9604bef19571a10e) (see `assets/piranha/license.txt`).
+- Music for Basalt Mines: "The Three-Knock Trail", an instrumental made by Moshe with Suno (see `assets/music/license.txt`).
 - Inspired by the Super Mario games. Unofficial, non-commercial fan project. Mario, Luigi, Bowser and related characters are trademarks of Nintendo. The code is not affiliated with or endorsed by Nintendo.
