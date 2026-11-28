@@ -1168,7 +1168,6 @@ function resetGame() {
 function startGame() {
   Audio.init();
   Audio.resume();
-  MenuMusic.setMenu(false); Audio.setMenuQuiet(false);
   resetGame();
   state = S.PLAYING;
   applySky();
@@ -1185,7 +1184,6 @@ function startGame() {
 function goToStar(i) {
   i = clamp(i | 0, 0, planets.length - 1);
   if (state !== S.PLAYING && state !== S.TRANSITION) startGame();
-  MenuMusic.setMenu(false); Audio.setMenuQuiet(false);
   transition = null;
   const L = levelOf(planets[i]);
   if (L) L.reset();
@@ -1202,9 +1200,17 @@ function goToStar(i) {
 window.goToStar = goToStar;
 document.querySelectorAll("#starPick button").forEach(b => b.addEventListener("click", () => { Audio.init(); Audio.click(); goToStar(+b.dataset.star); }));
 
+// "The Lantern Signal" (js/menu-music.js) plays on the menu and on star 1, softer in the game.
+// The in-game arpeggio keeps the other stars and waits while the song plays.
+function musicWanted() { return state === S.MENU || (state === S.PLAYING && !!active && active.def.theme === "wind"); }
+function syncMusic() {
+  const want = musicWanted();
+  MenuMusic.setWanted(want, state === S.MENU ? 0.5 : 0.3);
+  if (Audio.menuQuiet !== want) Audio.setMenuQuiet(want);
+}
+
 function goToMenu() {
   state = S.MENU;
-  MenuMusic.setMenu(true); Audio.setMenuQuiet(true);
   applySky();
   ui.menu.classList.remove("hidden");
   ui.victory.classList.add("hidden");
@@ -1855,6 +1861,7 @@ function animate() {
   updateAvatar();
   Characters.update(dt);
   Audio.update();
+  syncMusic();
   MenuMusic.update();
   starfield.position.copy(camera.position);
   updatePlanetDetail();
@@ -1944,7 +1951,7 @@ onResize();
 // place the player somewhere sensible so the menu scene looks alive
 landOnPlanet(0);
 state = S.MENU;
-MenuMusic.init({ isMenu: () => state === S.MENU });
+MenuMusic.init({ isWanted: musicWanted });
 // test/QA access (see docs/wind-gardens.md)
 let dbgPause = false;
 window.__dbg = { P, camera, get camDir() { return camDir; }, WindGardens, BasaltMines, InkSwamp, FurnaceMoon, QUALITY, Models, get pixelRatio() { return AutoRes.pixelRatio; }, set pause(v) { dbgPause = v; },

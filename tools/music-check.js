@@ -37,23 +37,37 @@ const H = require("./harness");
   c.ok("the song loops back to the start", lp.playing && lp.t < 10, lp);
   c.ok("the track is the Lantern Signal (2:34)", Math.abs(lp.dur - 154.8) < 1, lp.dur);
 
-  // starting a game fades it out
+  // Play: star 1 (Wind Gardens) keeps the song, softer, and the in-game arpeggio waits
+  const menuVol = await page.evaluate(() => MenuMusic.element.volume);
   await page.click("#playBtn");
   await page.waitForFunction(() => window.__dbg.state === "PLAYING");
-  await wait(1800);
-  p = await probe();
-  c.ok("Play fades the song out", !p.playing, p);
-  c.ok("the arpeggio returns in game", await page.evaluate(() => Audio.menuQuiet === false));
+  await wait(2500);
+  let g = await page.evaluate(() => ({ playing: MenuMusic.playing, vol: MenuMusic.element.volume, quiet: Audio.menuQuiet, t: MenuMusic.element.currentTime }));
+  c.ok("the song carries on into Wind Gardens", g.playing, g);
+  c.ok("softer in the game than on the menu", g.vol < menuVol, { menu: menuVol, game: g.vol });
+  c.ok("the arpeggio waits while the song plays on star 1", g.quiet === true);
 
-  // back to the menu: the song returns
+  // star 2: the song fades out, the arpeggio returns
+  await page.evaluate(() => goToStar(1));
+  await wait(2500);
+  g = await page.evaluate(() => ({ playing: MenuMusic.playing, quiet: Audio.menuQuiet }));
+  c.ok("it fades out on star 2", !g.playing, g);
+  c.ok("the arpeggio returns on star 2", g.quiet === false);
+
+  // back to star 1: the song returns
+  await page.evaluate(() => goToStar(0));
+  await wait(2500);
+  c.ok("it returns on star 1", (await probe()).playing);
+
+  // the flight to another star fades it
+  await page.evaluate(() => { const p = window.__dbg.planets[1]; window.__dbg.P.pos.copy(p.center).addScaledVector(new THREE.Vector3(0, 1, 0), p.radius + 30); });
+  await wait(2500);
+  c.ok("it fades once the hero is on another planet", !(await probe()).playing);
+
+  // Main Menu brings it back
   await page.evaluate(() => { document.getElementById("menuBtn").click(); });
-  await wait(2200);
-  c.ok("Main Menu brings the song back", (await probe()).playing || (await page.evaluate(() => MenuMusic.playing)));
-
-  // a star jump from the menu leaves it quiet
-  await page.evaluate(() => { document.querySelector('#starPick button[data-star="1"]').click(); });
-  await wait(1800);
-  c.ok("jumping to a star fades it out too", !(await probe()).playing);
+  await wait(2500);
+  c.ok("Main Menu brings the song back", (await probe()).playing);
 
   c.ok("no page errors", h.errors.length === 0, h.errors);
   const failed = c.report();
